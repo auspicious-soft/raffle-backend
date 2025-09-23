@@ -54,53 +54,120 @@ export const profileSerivce = {
       throw new Error("invalidOtp");
     }
 
+    const shippingAddress = await ShippingAddressModel.findOne({
+      userId: payload.userId,
+    });
+    if (
+      !shippingAddress ||
+      shippingAddress.pendingPhoneNumber !== payload.phone
+    ) {
+      throw new Error("pendingPhoneNotFound");
+    }
+
+    const user = await UserModel.findOne({ _id: payload.userId });
+    if (!user) {
+      throw new Error("User not Found");
+    }
+
+    shippingAddress.phoneNumber = shippingAddress.pendingPhoneNumber ?? "";
+    shippingAddress.countryCode = shippingAddress.pendingCountryCode ?? "";
+
+    user.pendingIsPhoneVerified = true;
+
+    shippingAddress.pendingPhoneNumber = undefined;
+    shippingAddress.pendingCountryCode = undefined;
+
+    await shippingAddress.save();
+
+
     await UserModel.updateOne(
       { _id: payload.userId },
-      { $set: { isVerifiedPhone: true } }
+      {
+        $set: {
+          isVerifiedPhone: true,
+          pendingIsPhoneVerified: true
+        },
+      }
     );
 
-    await OtpModel.deleteOne({ _id: otpDoc._id });
+    await ShippingAddressModel.updateOne(
+      { userId: payload.userId },
+      {
+        $set: {
+          phoneNumber: shippingAddress.phoneNumber,
+          countryCode: shippingAddress.countryCode,
+          pendingPhoneNumber:"",
+          pendingCountryCode:"",
+        },
+      }
+    );
 
+    // Remove used OTP
+    await OtpModel.deleteOne({ _id: otpDoc._id });
     return { success: true };
   },
 
-  updateUser: async (payload: any) => {
-    const userInformation = await ShippingAddressModel.findOneAndUpdate(
-      { userId: payload._id },
-      {
-        $set: {
-          address: payload.address,
-          country: payload.country,
-          countryCode: payload?.countryCode,
-          state: payload.state,
-          postalCode: payload.postalCode,
-          phoneNumber: payload.phoneNumber,
-        },
-      },
-      { new: true }
-    ).lean();
+updateUser: async (payload: any) => {
+  const currentShipping = await ShippingAddressModel.findOne({
+    userId: payload._id,
+  }).lean();
 
-    const user = await UserModel.findByIdAndUpdate(
-      payload.id,
-      {
-        $set: {
-          userName: payload?.userName,
-        },
-      },
-      { new: true }
-    ).lean();
+  let updateData: any = {
+    address: payload.address,
+    country: payload.country,
+    state: payload.state,
+    postalCode: payload.postalCode,
+  };
+  let otpSent = false;
 
-    return {
-      _id: payload.id,
-      userName: user?.userName || "",
-      phoneNumber: userInformation?.phoneNumber || "",
-      countryCode: userInformation?.countryCode || "",
-      address: userInformation?.address || "",
-      country: userInformation?.country || "",
-      state: userInformation?.state || "",
-      postalCode: userInformation?.postalCode || "",
-    };
-  },
+  if (
+    payload.phoneNumber &&
+    payload.phoneNumber !== currentShipping?.phoneNumber
+  ) {
+    updateData.pendingPhoneNumber = payload.phoneNumber;
+    updateData.pendingCountryCode = payload.countryCode;
+    updateData.pendingPhoneExpiry = new Date(Date.now() + 5 * 60 * 1000);
+
+     await generateAndSendOtp(
+      payload.phoneNumber,
+      "VERIFY_PHONE",
+      "PHONE",
+      "USER"
+    );
+    otpSent = true;
+
+  }
+
+  const userInformation = await ShippingAddressModel.findOneAndUpdate(
+    { userId: payload._id },
+    { $set: updateData },
+    { new: true }
+  ).lean();
+
+  const user = await UserModel.findByIdAndUpdate(
+    payload._id,
+    {
+      $set: {
+        userName: payload?.userName,
+      },
+    },
+    { new: true }
+  ).lean();
+
+  return {
+    _id: payload._id,
+    userName: user?.userName || "",
+    phoneNumber: userInformation?.phoneNumber || "", 
+    countryCode: userInformation?.countryCode || "",
+    address: userInformation?.address || "",
+    country: userInformation?.country || "",
+    state: userInformation?.state || "",
+    postalCode: userInformation?.postalCode || "",
+    pendingPhoneNumber: userInformation?.pendingPhoneNumber || "",
+    pendingCountryCode: userInformation?.pendingCountryCode || "",
+  };
+},
+
 };
 
 export const shippingServices = {
@@ -116,6 +183,16 @@ export const shippingServices = {
       phoneNumber,
     } = payload;
 
+    let messageKeys = ["created"];
+    const shippingAddress = await ShippingAddressModel.create({
+      userId,
+      country,
+      state,
+      address,
+      city,
+      postalCode,
+    });
+
     if (phoneNumber) {
       const existing = await ShippingAddressModel.findOne({
         phoneNumber,
@@ -124,21 +201,15 @@ export const shippingServices = {
       if (existing) {
         throw new Error("Phone Number already exist");
       }
-    }
 
-    const shippingAddress = await ShippingAddressModel.create({
-      userId,
-      country,
-      state,
-      address,
-      city,
-      postalCode,
-      countryCode,
-      phoneNumber,
-    });
-    let messageKeys = ["created"];
+      shippingAddress.pendingPhoneNumber = phoneNumber;
+      shippingAddress.pendingCountryCode = countryCode;
+      await shippingAddress.save();
 
-    if (phoneNumber) {
+      await UserModel.findByIdAndUpdate(userId, {
+        pendingIsPhoneVerified: false,
+      });
+
       const otp = await generateAndSendOtp(
         phoneNumber,
         "VERIFY_PHONE",

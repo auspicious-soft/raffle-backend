@@ -1,4 +1,5 @@
 import { Request, response, Response } from "express";
+import { UserModel } from "src/models/user/user-schema";
 import { ShippingAddressModel } from "src/models/user/user-shipping-schema";
 import {
   profileSerivce,
@@ -55,9 +56,9 @@ export const initiatePhoneVerification = async (
 ) => {
   try {
     const userId = req.user._id;
-    const { phone } = req.body;
+    const { phone , countryCode } = req.body;
 
-    if (!phone) {
+    if (!phone || !countryCode) {
       throw new Error("Phone Number is required");
     }
 
@@ -68,6 +69,23 @@ export const initiatePhoneVerification = async (
     if (existing) {
       throw new Error("phoneNumberExists");
     }
+
+     await ShippingAddressModel.findOneAndUpdate(
+      { userId },
+      {
+        pendingPhoneNumber: phone,
+        pendingCountryCode: countryCode,
+      },
+      { upsert: true, new: true }
+    );
+
+       await UserModel.findOneAndUpdate(
+      { _id:userId },
+      {
+        pendingIsPhoneVerified: false,
+      },
+      { new: true }
+    );
 
     const otp = await generateAndSendOtp(
       phone,

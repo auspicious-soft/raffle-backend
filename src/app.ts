@@ -41,12 +41,13 @@ app.get("/", (_, res: any) => {
 
 
 
+//*****************Admin Routes******************/
+app.use("/api/admin",checkAuth(["ADMIN"]), admin);
 
-// //*****************Admin Routes******************/
-app.use("/api/admin", admin);
-
-// //*****************Admin Routes******************/
+//*****************User Routes******************/
 app.use("/api/user", checkAuth(["USER"]) , user)
+
+
 app.use("/api" , auth);
 
 
