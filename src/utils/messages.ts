@@ -11,6 +11,7 @@ export const messages = {
   conflict: "Conflict occurred",
   validationError: "Validation failed",
   otpSent: "OTP sent to verify phone number. Please verify.",
+  categoryDeleted:"Category Deleted Successfully"
 };
 
 export const customMessages = {
