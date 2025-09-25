@@ -162,3 +162,21 @@ export const ResetPassword = async (req:Request, res:Response) => {
 }
 
 
+export const checkUserNameAvailability = async (req: Request, res: Response) => {
+  try {
+    const { userName } = req.body;
+    if (!userName) {
+      throw new Error("userNameRequired");
+    }
+
+    const response = await authServices.checkUserNameAvailability({ userName });
+    return OK(res, response);
+  } catch (err: any) {
+    if (err.message) {
+      return BADREQUEST(res, err.message);
+    }
+    return INTERNAL_SERVER_ERROR(res);
+  }
+};
+
+

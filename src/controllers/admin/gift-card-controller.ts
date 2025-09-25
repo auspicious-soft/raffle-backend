@@ -1,5 +1,4 @@
-import { error } from "console";
-import { Request, response, Response } from "express";
+import { Request,  Response } from "express";
 import { GiftCardServices } from "src/services/admin/admin-services";
 import {
   BADREQUEST,
@@ -94,7 +93,7 @@ export const getGiftCards = async (req: Request, res: Response) => {
     const response = await GiftCardServices.getGiftCards({
       categoryId,
       page: page ? page : "1",
-      limit: limit ? limit : "",
+      limit: limit ? limit : "10",
       search: search ? search : "",
       status: status ? status : "",
     });

@@ -1,7 +1,7 @@
 
 
 import { Router } from "express";
-import {  Login,  registerUser, resendOtp, ForgetPassword, ResetPassword, VerifyResetPasswordOtp, verifyOtp } from "src/controllers/auth/auth-controller";
+import {  Login,  registerUser, resendOtp, ForgetPassword, ResetPassword, VerifyResetPasswordOtp, verifyOtp, checkUserNameAvailability } from "src/controllers/auth/auth-controller";
 
 // Code
 const router = Router();
@@ -15,6 +15,7 @@ router.post("/resend-otp",resendOtp)
 router.post("/forget-password",ForgetPassword)
 router.post("/reset-verify-otp",VerifyResetPasswordOtp)
 router.post("/reset-password",ResetPassword)
+router.post("/check-username", checkUserNameAvailability);
 
 
 export { router };

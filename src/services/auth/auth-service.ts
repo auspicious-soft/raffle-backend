@@ -8,11 +8,30 @@ import {
   verifyPassword,
 } from "src/utils/helper";
 import jwt from "jsonwebtoken";
+import { Filter } from "bad-words";
 
 configDotenv();
 
-export const authServices = {
+const filter = new Filter();
 
+filter.addWords("somebadword", "anotherbadword");
+
+function normalizeUsername(username: string) {
+  return username
+    .toLowerCase()
+    .replace(/[@._-]/g, "")            // remove special chars
+    .replace(/[0-9]/g, "")             // remove digits
+    .replace(/[0134]/g, (c) => ({ 
+      "0": "o", 
+      "1": "i", 
+      "3": "e", 
+      "4": "a" 
+    }[c] || c))
+    .trim();
+}
+
+
+export const authServices = {
   async login(payload: any) {
     const checkExist = await UserModel.findOne({
       email: payload.email,
@@ -49,20 +68,15 @@ export const authServices = {
 
   async forgetPassword(payload: any) {
     const checkExist = await UserModel.findOne({
-          email: payload.email,
-          isVerifiedEmail: true,
-          authType: "EMAIL",
-        });
+      email: payload.email,
+      isVerifiedEmail: true,
+      authType: "EMAIL",
+    });
     if (!checkExist) {
       throw new Error("userNotFound");
     }
-    await generateAndSendOtp(
-      payload.email,
-      "FORGOT_PASSWORD",
-      "EMAIL",
-       "USER"
-    );
-    return {};
+   const OTP = await generateAndSendOtp(payload.email, "FORGOT_PASSWORD", "EMAIL", "USER");
+    return {OTP};
   },
 
   async verifyForgetPasswordOTP(payload: any) {
@@ -101,7 +115,7 @@ export const authServices = {
     }
     const password = await hashPassword(payload.password);
 
-      await UserModel.updateOne({ email: data.email }, { $set: { password } });
+    await UserModel.updateOne({ email: data.email }, { $set: { password } });
 
     return {};
   },
@@ -119,11 +133,11 @@ export const authServices = {
     const userData = await UserModel.create(payload);
     const user = userData.toObject();
     delete user.password;
-
+    let OTP = ""
     if (payload.authType === "EMAIL") {
-      await generateAndSendOtp(payload.email, "SIGNUP", "EMAIL", "USER");
+     OTP =  await generateAndSendOtp(payload.email, "SIGNUP", "EMAIL", "USER");
     }
-    return user;
+    return {...user, OTP};
   },
 
   async verifyOtp(payload: any) {
@@ -169,12 +183,34 @@ export const authServices = {
       }
     }
 
-    await generateAndSendOtp(
+   const OTP  = await generateAndSendOtp(
       payload.value,
       payload.purpose,
       "EMAIL",
       payload.userType
     );
-    return {};
+    return {OTP};
+  },
+
+  async checkUserNameAvailability(payload:any) {
+    const {userName} = payload
+    if (!userName) {
+      throw new Error("userNameRequired");
+    }
+    const normalized = normalizeUsername(userName);
+
+
+    if (filter.isProfane(normalized)) {
+      return { available: false, reason: "profanity" };
+    }
+    const existingUser = await UserModel.findOne({
+      userName: { $regex: `^${userName}$`, $options: "i" },
+      isDeleted: false,
+    });
+    if (existingUser) {
+      return { available: false };
+    }
+
+    return { available: true };
   },
 };

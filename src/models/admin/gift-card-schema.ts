@@ -1,4 +1,4 @@
-import mongoose, { Document, ObjectId, Schema } from "mongoose";
+import mongoose, { Document, Schema } from "mongoose";
 
 export interface IGiftCard extends Document {
   categoryId: mongoose.Types.ObjectId;
@@ -34,7 +34,10 @@ const giftCardSchema = new Schema<IGiftCard>({
     type: Date,
     required: true,
   },
-});
+},
+  { timestamps: true }
+
+);
 
 export const GiftCardModel = mongoose.model<IGiftCard>(
   "giftcards",

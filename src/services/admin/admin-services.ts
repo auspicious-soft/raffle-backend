@@ -2,7 +2,8 @@ import csvParser from "csv-parser";
 import mongoose from "mongoose";
 import { GiftCardModel } from "src/models/admin/gift-card-schema";
 import { GiftCategoryModel } from "src/models/admin/gift-category-schema";
-import { messages } from "src/utils/messages";
+import { PromoCodeModel } from "src/models/admin/promo-code-schema";
+import { UserModel } from "src/models/user/user-schema";
 import { Readable } from "stream";
 
 export const GiftCardServices = {
@@ -213,5 +214,103 @@ export const GiftCardServices = {
         })
         .on("error", (err) => reject(err));
     });
+  },
+};
+
+export const PromoCodeServices = {
+  addPromoCode: async (payload: any) => {
+    const {
+      reedemCode,
+      expiryDate,
+      promoType,
+      totalUses,
+      discount,
+      associatedTo,
+    } = payload;
+    if (!reedemCode || !expiryDate || !promoType || !totalUses || !discount) {
+      throw new Error("requriedPromoFields");
+    }
+    let userName = "";
+
+    if (promoType === "PRIVATE") {
+      if (!associatedTo) {
+        throw new Error("User id required to create Private PromoCode");
+      }
+
+      const checkExist = await UserModel.findOne({
+        _id: associatedTo,
+        isDeleted: false,
+      });
+      if (!checkExist) {
+        throw new Error("User not Found");
+      }
+      userName = checkExist.userName;
+    }
+
+    const expiry = new Date(expiryDate);
+    const now = new Date();
+    if (expiry <= now) {
+      throw new Error("Expiry date must be a future date");
+    }
+    const promoData = await PromoCodeModel.create({
+      reedemCode,
+      expiryDate: new Date(expiryDate),
+      promoType,
+      totalUses,
+      discount,
+      userName,
+      associatedTo: associatedTo || null,
+    });
+    return promoData.toObject();
+  },
+  getPromoCodes: async (payload: any) => {
+    const { type, page, limit } = payload;
+
+    const pageNumber = parseInt(page, 10);
+    const limitNumber = parseInt(limit, 10);
+    const skip = (pageNumber - 1) * limitNumber;
+
+    const filter: any = {
+      status: { $ne: "EXPIRED" },
+    };
+
+    if (type) {
+      filter.promoType = type;
+    }
+
+    const totalPromos = await PromoCodeModel.countDocuments(filter);
+
+    const rawPromos = await PromoCodeModel.find(filter)
+      .skip(skip)
+      .limit(limitNumber)
+      .sort({ createdAt: -1 });
+
+    const promos = rawPromos.map((promo: any) => promo.toObject());
+
+    return {
+      data: promos,
+      pagination: {
+        total: totalPromos,
+        page: pageNumber,
+        limit: limitNumber,
+        totalPages: Math.ceil(totalPromos / limitNumber),
+      },
+    };
+  },
+  deletePromoCode: async (payload: any) => {
+    const { promoId } = payload;
+    if (!promoId) {
+      throw new Error("Promo Id is requried");
+    }
+    const checkExist = await PromoCodeModel.findById(promoId);
+    if (!checkExist) {
+      throw new Error("Promo not Found");
+    }
+    if (checkExist.isDeleted) {
+      throw new Error("Promo is already deleted");
+    }
+     await PromoCodeModel.findByIdAndUpdate(promoId, { isDeleted: true });
+
+    return {};
   },
 };

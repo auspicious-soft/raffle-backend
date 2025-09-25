@@ -11,7 +11,8 @@ export const messages = {
   conflict: "Conflict occurred",
   validationError: "Validation failed",
   otpSent: "OTP sent to verify phone number. Please verify.",
-  categoryDeleted:"Category Deleted Successfully"
+  categoryDeleted:"Category Deleted Successfully.",
+  promoDeleted:"Promo Deleted Successfully."
 };
 
 export const customMessages = {
@@ -30,6 +31,10 @@ export const customMessages = {
   emailExist: "Email already exists",
   registerRequiredFields: "Fullname, email, and password are required",
   invalidRegisterFields: "Country or Language is invalid",
+  requriedPromoFields:"reedemCode, expiryDate, promoType, totalUses, discount are required ",
+
+
+
   invalidOtp: "Invalid or expired OTP",
   userNotFound: "User not found",
   invalidPassword: "Invalid password",
