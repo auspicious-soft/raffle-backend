@@ -1,4 +1,5 @@
 import mongoose, { Date, Document, Schema } from "mongoose";
+import { boolean } from "zod";
 import { required } from "zod/v4/core/util.cjs";
 
 export interface IRewardDetails extends Document {
@@ -20,78 +21,96 @@ export interface IRaffle extends Document {
   startDate: Date;
   endDate: Date;
   status: string;
+  isDeleted: boolean;
   createdAt: Date;
   updatedAt: Date;
   rewards: IRewardDetails[];
 }
 
-const raffleSchema = new Schema<IRaffle>({
-  title: {
-    type: String,
-    required: true,
-  },
-  description: {
-    type: String,
-    requried: true,
-  },
-  price: {
-    type: Number,
-    required: true,
-  },
-  totalSlots: {
-    type: Number,
-    required: true,
-  },
-  bookedSlots: {
-    type: Number,
-    default: 0,
-  },
-  startDate: {
-    type: Date,
-    required: true,
-  },
-  endDate: {
-    type: Date,
-    required: true,
-  },
-  winnerId: {
-    type: Schema.Types.ObjectId,
-    ref: "user",
-    default: null,
-  },
-  status: {
-    type: String,
-    default: "INACTIVE",
-    eanum: ["INACTIVE", "ACTIVE", "COMPLETED"],
-  },
-  rewards: {
-    rewardName: {
+const raffleSchema = new Schema<IRaffle>(
+  {
+    title: {
       type: String,
       required: true,
     },
-    rewardType: {
+    description: {
       type: String,
-      default: "DIGITAL",
-      enum: ["DIGITAL", "PHYSICAL"],
+      required: true,
     },
-    giftCard: {
-      type: Schema.Types.ObjectId,
-      ref: "giftcards",
-      default: null,
-    },
-    consolationPoints: {
+    price: {
       type: Number,
       required: true,
     },
-    promoCode: {
+    totalSlots: {
+      type: Number,
+      required: true,
+    },
+    bookedSlots: {
+      type: Number,
+      default: 0,
+    },
+    startDate: {
+      type: Date,
+      required: true,
+    },
+    endDate: {
+      type: Date,
+      required: true,
+    },
+    winnerId: {
       type: Schema.Types.ObjectId,
-      ref:"promoCodes",
+      ref: "user",
       default: null,
     },
-    rewardStaus: {
-      type: String,
-      default: "",
-      enum: ["DELIVERED", ""],
+    isDeleted: {
+      type: Boolean,
+      default: false,
     },
+    status: {
+      type: String,
+      default: "INACTIVE",
+      enum: ["INACTIVE", "ACTIVE", "COMPLETED"],
+    },
+    rewards: [
+      {
+        rewardName: {
+          type: String,
+          required: true,
+        },
+        rewardType: {
+          type: String,
+          default: "DIGITAL",
+          enum: ["DIGITAL", "PHYSICAL"],
+        },
+        rewardImages: {
+          type: [String],
+          default: [],
+        },
+        giftCard: {
+          type: Schema.Types.ObjectId,
+          ref: "giftCategories",
+          default: null,
+        },
+        consolationPoints: {
+          type: Number,
+          required: true,
+        },
+        promoCode: {
+          type: Schema.Types.ObjectId,
+          ref: "promoCodes",
+          default: null,
+        },
+        rewardStatus: {
+          type: String,
+          default: "",
+          enum: ["DELIVERED", ""],
+        },
+      },
+    ],
   },
-});
+  {
+    timestamps: true,
+  }
+);
+
+export const RaffleModel = mongoose.model<IRaffle>("raffles", raffleSchema);

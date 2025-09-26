@@ -9,6 +9,7 @@ import {
 } from "src/utils/helper";
 import jwt from "jsonwebtoken";
 import { Filter } from "bad-words";
+import { error } from "console";
 
 configDotenv();
 
@@ -127,6 +128,14 @@ export const authServices = {
     });
     if (checkExist) {
       throw new Error("emaiExist");
+    }
+
+    const checkUserName = await UserModel.findOne({
+      userName:payload.userName,
+      isDeleted:false,
+    });
+    if(checkUserName){
+      throw new Error("username allready exist")
     }
 
     payload.password = await hashPassword(payload.password);

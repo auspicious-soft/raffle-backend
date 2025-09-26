@@ -3,6 +3,7 @@ import mongoose from "mongoose";
 import { GiftCardModel } from "src/models/admin/gift-card-schema";
 import { GiftCategoryModel } from "src/models/admin/gift-category-schema";
 import { PromoCodeModel } from "src/models/admin/promo-code-schema";
+import { RaffleModel } from "src/models/admin/raffle-schema";
 import { UserModel } from "src/models/user/user-schema";
 import { Readable } from "stream";
 
@@ -309,8 +310,164 @@ export const PromoCodeServices = {
     if (checkExist.isDeleted) {
       throw new Error("Promo is already deleted");
     }
-     await PromoCodeModel.findByIdAndUpdate(promoId, { isDeleted: true });
+    await PromoCodeModel.findByIdAndUpdate(promoId, { isDeleted: true });
 
     return {};
+  },
+};
+
+export const RaffleServices = {
+  createRaffle: async (payload: any) => {
+    const {
+      title,
+      description,
+      price,
+      totalSlots,
+      startDate,
+      endDate,
+      rewards,
+    } = payload;
+    if (
+      !title ||
+      !description ||
+      !price ||
+      !totalSlots ||
+      !startDate ||
+      !endDate
+    ) {
+      throw new Error("missingRaffleFields");
+    }
+    if (!rewards || !Array.isArray(rewards) || rewards.length === 0) {
+      throw new Error("Reward requried to create a raffle");
+    }
+    const now = new Date();
+    const sDate = new Date(startDate);
+    const eDate = new Date(endDate);
+
+    if (sDate <= now) {
+      throw new Error("Start Date must be in Future");
+    }
+    if (eDate <= sDate) {
+      throw new Error("EndDate must be ahead of start date");
+    }
+    const formattedRewards: any[] = [];
+    for (const reward of rewards) {
+      const {
+        rewardName,
+        rewardType,
+        giftCard,
+        consolationPoints,
+        promoCode,
+        rewardImages,
+      } = reward;
+
+      if (!rewardName || !consolationPoints || !promoCode || !rewardType) {
+        throw new Error(
+          "rewardName, consolationPoints, promocode and RewardType is Required"
+        );
+      }
+
+      if (rewardType === "PHYSICAL" && giftCard) {
+        throw new Error("Physical reward cannot have a giftCard");
+      }
+
+      if (rewardType === "DIGITAL" && !giftCard) {
+        throw new Error("gift Card is Required for Digital Raffles");
+      }
+
+      if (giftCard) {
+        const checkGiftExist = await GiftCategoryModel.findOne({
+          _id: giftCard,
+          isDeleted: false,
+        });
+        if (!checkGiftExist) {
+          throw new Error("Gift Category not found or invalid");
+        }
+      }
+
+      if (promoCode) {
+        const checkPromo = await PromoCodeModel.findOne({
+          _id: promoCode,
+          isDeleted: false,
+          status: "AVAILABLE",
+        });
+        if (!checkPromo) {
+          throw new Error("Promo Code not found or invalid");
+        }
+      }
+
+      formattedRewards.push({
+        rewardName,
+        rewardType,
+        giftCard: giftCard || null,
+        consolationPoints,
+        promoCode: promoCode || null,
+        rewardImages: Array.isArray(rewardImages) ? rewardImages : [],
+      });
+    }
+
+    const raffle = await RaffleModel.create({
+      title,
+      description,
+      price,
+      totalSlots,
+      bookedSlots: 0,
+      startDate: new Date(startDate),
+      endDate: new Date(endDate),
+      rewards: formattedRewards,
+    });
+
+    return raffle.toObject();
+  },
+  getRaffles: async (payload: any) => {
+    const { type, page, limit, status, search } = payload;
+    const ALLOWED_STATUS = ["INACTIVE", "ACTIVE", "COMPLETED"];
+
+    if (status && !ALLOWED_STATUS.includes(status)) {
+      throw new Error(
+        `Invalid status. Allowed values: ${ALLOWED_STATUS.join(", ")}`
+      );
+    }
+
+    const pageNumber = parseInt(page, 10);
+    const limitNumber = parseInt(limit, 10);
+    const skip = (pageNumber - 1) * limitNumber;
+    const filter: any = {};
+    if (search) {
+      filter.title = { $regex: search, $options: "i" };
+    }
+    if (status && ALLOWED_STATUS.includes(status)) {
+      filter.status = status;
+    }
+    const totalRaffles = await RaffleModel.countDocuments(filter);
+    const rawRaffles = await RaffleModel.find(filter)
+      .skip(skip)
+      .limit(limitNumber)
+      .sort({ createdAt: -1 });
+
+    const raffles = rawRaffles.map((raffle: any) => raffle.toObject());
+    return {
+      data: raffles,
+      pagination: {
+        total: totalRaffles,
+        page: pageNumber,
+        limit: limitNumber,
+        totalPages: Math.ceil(totalRaffles / limitNumber),
+      },
+    };
+  },
+
+  getRaffleById: async (payload: any) => {
+    const {raffleId} = payload;
+     if(!raffleId){
+            throw new Error("Raffle id is Required")
+        }
+        const checkExist = await RaffleModel.findOne({
+          _id:raffleId,
+          isDeleted:false,
+        })
+        if(!checkExist){
+          throw new Error("Raffle Not Found.")
+        }
   },
 };

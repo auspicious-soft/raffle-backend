@@ -32,7 +32,7 @@ export const customMessages = {
   registerRequiredFields: "Fullname, email, and password are required",
   invalidRegisterFields: "Country or Language is invalid",
   requriedPromoFields:"reedemCode, expiryDate, promoType, totalUses, discount are required ",
-
+missingRaffleFields:"title, description, price, totalSlots, startDate, endDate and rewards data is required",
 
 
   invalidOtp: "Invalid or expired OTP",
