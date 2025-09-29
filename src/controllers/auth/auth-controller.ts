@@ -121,12 +121,12 @@ export const VerifyResetPasswordOtp = async (
   res: Response
 ) => {
   try {
-    const { otp, method } = req.body;
-    if (!otp) {
+    const { code, method } = req.body;
+    if (!code) {
       throw new Error("invalidOtp");
     }
     const response = await authServices.verifyForgetPasswordOTP({
-      otp,
+      code,
       method,
       userType: "USER",
     });

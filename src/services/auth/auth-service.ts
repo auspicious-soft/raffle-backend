@@ -83,7 +83,7 @@ export const authServices = {
   async verifyForgetPasswordOTP(payload: any) {
     const checkOtp = await OtpModel.findOne({
       $or: [{ email: payload.method }, { phone: payload.method }],
-      code: payload.otp,
+      code: payload.code,
       userType: payload.userType,
     });
     if (!checkOtp) {
