@@ -39,13 +39,13 @@ export const getAllLadders = async (req: Request, res: Response) => {
   }
 };
 
-export const getSingleLadder = async (req:Request, res:Response) =>{
-    try {
-        const {id:ladderId} = req.params;
-        if(!ladderId){
-            throw new Error("Ladder id is requried")
-        }
-        const response = await RedempLadder.getSingleLadder({ladderId})
+export const getSingleLadder = async (req: Request, res: Response) => {
+  try {
+    const { id: ladderId } = req.params;
+    if (!ladderId) {
+      throw new Error("Ladder id is requried");
+    }
+    const response = await RedempLadder.getSingleLadder({ ladderId });
     return OK(res, response || {});
   } catch (err: any) {
     if (err.message) {
@@ -55,8 +55,39 @@ export const getSingleLadder = async (req:Request, res:Response) =>{
   }
 };
 
-export const deleteLadder =  async (req:Request, res:Response) =>{try {
-    
-} catch (error) {
-    
-}}
+export const deleteLadder = async (req: Request, res: Response) => {
+  try {
+    const { id: ladderId } = req.params;
+    if (!ladderId) {
+      throw new Error("Ladder id is requried");
+    }
+    const response = await RedempLadder.deleteLadder({ ladderId });
+    const messageKey = ["success", "ladderDeleted"].join("|");
+    return OK(res, {}, messageKey);
+  } catch (err: any) {
+    if (err.message) {
+      return BADREQUEST(res, err.message);
+    }
+    return INTERNAL_SERVER_ERROR(res);
+  }
+};
+
+export const updateLadder = async (req: Request, res: Response) => {
+  try {
+    const {id:ladderId} = req.params
+    const { name, requiredPoints, categories } = req.body;
+    if (!ladderId) {
+      throw new Error("Ladder id is requried");
+    }
+    const reponse = await RedempLadder.updateLadder({
+      ladderId,
+      name,
+      requiredPoints,
+      categories,
+    });
+    return OK(res, reponse);
+  } catch (err: any) {
+    if (err.message) return BADREQUEST(res, err.message);
+    return INTERNAL_SERVER_ERROR(res);
+  }
+};

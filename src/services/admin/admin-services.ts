@@ -286,7 +286,7 @@ export const PromoCodeServices = {
 
     const filter: any = {
       status: { $ne: "EXPIRED" },
-      isDeleted:false,
+      isDeleted: false,
     };
 
     if (type) {
@@ -790,6 +790,7 @@ export const RedempLadder = {
     });
     return ladder.toObject();
   },
+
   getAllLadders: async (payload: any) => {
     const totalCount = await RedemptionModel.countDocuments();
     const ladders = await RedemptionModel.find({ isDeleted: false })
@@ -803,17 +804,80 @@ export const RedempLadder = {
 
     return { totalLadders: totalCount, ladders };
   },
+
   getSingleLadder: async (payload: any) => {
     const { ladderId } = payload;
     if (!ladderId) {
       throw new Error("Ladder id is requried");
     }
-    const ladder = await RedemptionModel.findOne({_id:ladderId, isDeleted:false})
-    .lean()
-    .select("-__v -createdAt -updatedAt");
-    if(!ladder){
-      throw new Error("Redemption Ladder not found.")
-    };
+    const ladder = await RedemptionModel.findOne({
+      _id: ladderId,
+      isDeleted: false,
+    })
+      .lean()
+      .select("-__v -createdAt -updatedAt");
+    if (!ladder) {
+      throw new Error("Redemption Ladder not found.");
+    }
     return ladder;
+  },
+
+  deleteLadder: async (payload: any) => {
+    const { ladderId } = payload;
+    if (!ladderId) {
+      throw new Error("Ladder id is requried");
+    }
+    const ladder = await RedemptionModel.findById(ladderId);
+    if (!ladder) {
+      throw new Error("Ladder not Found");
+    }
+    if (ladder.isDeleted) {
+      throw new Error("Ladder is already deleted");
+    }
+    await RedemptionModel.findByIdAndUpdate(ladderId, { isDeleted: true });
+    return {};
+  },
+
+  updateLadder: async (payload: any) => {
+    const { ladderId, ...fieldsToUpdate } = payload;
+    if (!ladderId){
+       throw new Error("Ladder id is required");
+    }
+
+    const ladder = await RedemptionModel.findById(ladderId);
+    if (!ladder || ladder.isDeleted) throw new Error("Ladder not found");
+
+    const update: any = {};
+    if (fieldsToUpdate.name !== undefined) update.name = fieldsToUpdate.name;
+    if (fieldsToUpdate.requiredPoints !== undefined)
+      update.requiredPoints = fieldsToUpdate.requiredPoints;
+
+    if (fieldsToUpdate.categories !== undefined) {
+      if (
+        !Array.isArray(fieldsToUpdate.categories) ||
+        fieldsToUpdate.categories.length === 0
+      ) {
+        throw new Error("Categories must be a non-empty array if provided");
+      }
+      await Promise.all(
+        fieldsToUpdate.categories.map(async (cat: any) => {
+          const exists = await GiftCategoryModel.findOne({
+            _id: cat,
+            isDeleted: false,
+          });
+          if (!exists) throw new Error(`Category not found or deleted: ${cat}`);
+        })
+      );
+
+      update.categories = fieldsToUpdate.categories;
+    }
+
+    const updatedLadder = await RedemptionModel.findByIdAndUpdate(
+      ladderId,
+      { $set: update },
+      { new: true }
+    ).lean();
+
+    return updatedLadder;
   },
 };

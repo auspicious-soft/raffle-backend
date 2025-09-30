@@ -21,7 +21,7 @@ import {
   getRaffleById,
   updateRaffle,
 } from "src/controllers/admin/raffle-controller";
-import { createRedemptionLadder, getAllLadders, getSingleLadder } from "src/controllers/admin/redemption-ladder-controller";
+import { createRedemptionLadder, deleteLadder, getAllLadders, getSingleLadder, updateLadder } from "src/controllers/admin/redemption-ladder-controller";
 import {
   getAdminData,
   updateAdminData,
@@ -60,5 +60,5 @@ router.post("/block-unblock",blockUnblockUser)
 
 // Redemption Ladder API's
 router.route("/redemption-ladder").post(createRedemptionLadder).get(getAllLadders)
-router.route("/ladder/:id").get(getSingleLadder)
+router.route("/ladder/:id").get(getSingleLadder).delete(deleteLadder).patch(updateLadder)
 export { router };
