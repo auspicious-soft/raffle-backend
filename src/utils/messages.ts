@@ -12,7 +12,8 @@ export const messages = {
   validationError: "Validation failed",
   otpSent: "OTP sent to verify phone number. Please verify.",
   categoryDeleted:"Category Deleted Successfully.",
-  promoDeleted:"Promo Deleted Successfully."
+  promoDeleted:"Promo Deleted Successfully.",
+  raffleDeleted:"Raffle Deleted Successfully."
 };
 
 export const customMessages = {

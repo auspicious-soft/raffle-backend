@@ -1,4 +1,4 @@
-import { Request, Response } from "express";
+import { Request, response, Response } from "express";
 import { RaffleServices } from "src/services/admin/admin-services";
 import {
   BADREQUEST,
@@ -69,13 +69,73 @@ export const getAllRaffles = async (req: Request, res: Response) => {
   }
 };
 
-export const getRaffleById = async (req:Request, res:Response) =>{
-    try {
-        const {id:raffleId} = req.params 
-        if(!raffleId){
-            throw new Error("Raffle id is Required")
-        }
-    } catch (error) {
-        
+export const getRaffleById = async (req: Request, res: Response) => {
+  try {
+    const { id: raffleId } = req.params;
+    if (!raffleId) {
+      throw new Error("Raffle id is Required");
     }
-}
+    const response = await RaffleServices.getRaffleById({
+      raffleId,
+    });
+    return OK(res, response || {});
+  } catch (err: any) {
+    if (err.message) {
+      return BADREQUEST(res, err.message);
+    }
+    return INTERNAL_SERVER_ERROR(res);
+  }
+};
+
+export const deleteRaffle = async (req: Request, res: Response) => {
+  try {
+    const { id: raffleId } = req.params;
+    if (!raffleId) {
+      throw new Error("Raffle id is Required");
+    }
+    const response = await RaffleServices.deleteRaffle({
+      raffleId,
+    });
+    const messageKey = ["success", "raffleDeleted"].join("|");
+    return OK(res, response, messageKey);
+  } catch (err: any) {
+    if (err.message) {
+      return BADREQUEST(res, err.message);
+    }
+    return INTERNAL_SERVER_ERROR(res);
+  }
+};
+
+export const updateRaffle = async (req: Request, res: Response) => {
+  try {
+    const {
+      raffleId,
+      price,
+      title,
+      description,
+      startDate,
+      endDate,
+      rewards,
+      status,
+    } = req.body;
+    if (!raffleId) {
+      throw new Error("Raffle id is Required");
+    }
+    const response = await RaffleServices.updateRaffle({
+      raffleId,
+      price,
+      title,
+      description,
+      startDate,
+      endDate,
+      rewards,
+      status,
+    });
+    return OK(res, response || {});
+  } catch (err: any) {
+    if (err.message) {
+      return BADREQUEST(res, err.message);
+    }
+    return INTERNAL_SERVER_ERROR(res);
+  }
+};

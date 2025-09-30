@@ -1,4 +1,4 @@
-import { Request,  Response } from "express";
+import { Request, Response } from "express";
 import { GiftCardServices } from "src/services/admin/admin-services";
 import {
   BADREQUEST,
@@ -66,15 +66,12 @@ export const deleteCategory = async (req: Request, res: Response) => {
 // Gift Card Controller
 export const addGiftCard = async (req: Request, res: Response) => {
   try {
-    const { categoryId, price, redemptionCode, expiryDate } = req.body;
-    if (!categoryId || !price || !redemptionCode || !expiryDate) {
-      throw new Error(
-        "categoryId, price, ReedemCode and Expiry Date is Required"
-      );
+    const { categoryId, redemptionCode, expiryDate } = req.body;
+    if (!categoryId || !redemptionCode || !expiryDate) {
+      throw new Error("categoryId, ReedemCode and Expiry Date is Required");
     }
     const response = await GiftCardServices.addGiftCard({
       categoryId,
-      price,
       redemptionCode,
       expiryDate,
     });
@@ -119,7 +116,10 @@ export const importGiftCardsCSV = async (req: Request, res: Response) => {
 
     const buffer = req.file.buffer;
 
-    const result = await GiftCardServices.importGiftCardsCSV(buffer, categoryId);
+    const result = await GiftCardServices.importGiftCardsCSV(
+      buffer,
+      categoryId
+    );
 
     return OK(res, result);
   } catch (err: any) {

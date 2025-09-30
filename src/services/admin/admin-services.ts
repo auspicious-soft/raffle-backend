@@ -5,6 +5,7 @@ import { GiftCategoryModel } from "src/models/admin/gift-category-schema";
 import { PromoCodeModel } from "src/models/admin/promo-code-schema";
 import { RaffleModel } from "src/models/admin/raffle-schema";
 import { UserModel } from "src/models/user/user-schema";
+import { ShippingAddressModel } from "src/models/user/user-shipping-schema";
 import { Readable } from "stream";
 
 export const GiftCardServices = {
@@ -61,27 +62,32 @@ export const GiftCardServices = {
   },
 
   addGiftCard: async (payload: any) => {
-    const { categoryId, price, redemptionCode, expiryDate } = payload;
+    const { categoryId, redemptionCode, expiryDate } = payload;
 
-    if (!categoryId || !price || !redemptionCode || !expiryDate) {
-      throw new Error(
-        "categoryId, price, ReedemCode and Expiry Date is Required"
-      );
+    if (!categoryId || !redemptionCode || !expiryDate) {
+      throw new Error("categoryId, ReedemCode and Expiry Date is Required");
     }
-    const checkExist = await GiftCategoryModel.findOne({
+    const category = await GiftCategoryModel.findOne({
       _id: categoryId,
       isDeleted: false,
     });
-    if (!checkExist) {
+    if (!category) {
       throw new Error("Category not Found");
     }
+    const price = category.price;
+
     const expiry = new Date(expiryDate);
     const now = new Date();
     if (expiry <= now) {
       throw new Error("Expiry date must be a future date");
     }
 
-    const giftCardData = await GiftCardModel.create(payload);
+    const giftCardData = await GiftCardModel.create({
+      categoryId,
+      price,
+      redemptionCode,
+      expiryDate,
+    });
     const gift = giftCardData.toObject();
     return gift;
   },
@@ -95,7 +101,7 @@ export const GiftCardServices = {
     const checkExist = await GiftCategoryModel.findOne({
       _id: categoryId,
       isDeleted: false,
-    });
+    }).lean();
     if (!checkExist) {
       throw new Error("Category not found");
     }
@@ -133,6 +139,7 @@ export const GiftCardServices = {
 
     return {
       data: giftCards,
+      companyName: checkExist.companyName,
       pagination: {
         total: totalCards,
         page: pageNumber,
@@ -422,10 +429,16 @@ export const RaffleServices = {
   getRaffles: async (payload: any) => {
     const { type, page, limit, status, search } = payload;
     const ALLOWED_STATUS = ["INACTIVE", "ACTIVE", "COMPLETED"];
+    const ALLOWED_TYPE = ["PHYSICAL", "DIGITAL"];
 
     if (status && !ALLOWED_STATUS.includes(status)) {
       throw new Error(
         `Invalid status. Allowed values: ${ALLOWED_STATUS.join(", ")}`
+      );
+    }
+    if (type && !ALLOWED_TYPE.includes(type)) {
+      throw new Error(
+        `Invalid Type. Allowed values: ${ALLOWED_TYPE.join(", ")}`
       );
     }
 
@@ -438,6 +451,9 @@ export const RaffleServices = {
     }
     if (status && ALLOWED_STATUS.includes(status)) {
       filter.status = status;
+    }
+    if (type && ALLOWED_TYPE.includes(type)) {
+      filter["rewards.rewardType"] = type;
     }
     const totalRaffles = await RaffleModel.countDocuments(filter);
     const rawRaffles = await RaffleModel.find(filter)
@@ -458,16 +474,265 @@ export const RaffleServices = {
   },
 
   getRaffleById: async (payload: any) => {
-    const {raffleId} = payload;
-     if(!raffleId){
-            throw new Error("Raffle id is Required")
+    const { raffleId } = payload;
+    if (!raffleId) {
+      throw new Error("Raffle id is Required");
+    }
+    const raffle = await RaffleModel.findById(raffleId)
+      .select("-__v ")
+      .populate({
+        path: "rewards.giftCard",
+        select: "companyName _id",
+      })
+      .populate({
+        path: "rewards.promoCode",
+        select: "reedemCode _id",
+      })
+      .populate({
+        path: "winnerId",
+        select: "userName _id",
+      })
+      .lean();
+
+    if (!raffle || raffle.isDeleted) {
+      throw new Error("Raffle not found");
+    }
+
+    return raffle;
+  },
+
+  deleteRaffle: async (payload: any) => {
+    const { raffleId } = payload;
+    if (!raffleId) {
+      throw new Error("Raffle id is Required");
+    }
+
+    const checkExist = await RaffleModel.findById(raffleId);
+    if (!checkExist) {
+      throw new Error("Raffle not Found");
+    }
+    if (checkExist.isDeleted) {
+      throw new Error("Raffle is already deleted");
+    }
+    await RaffleModel.findByIdAndUpdate(raffleId, { isDeleted: true });
+    return {};
+  },
+  updateRaffle: async (payload: any) => {
+    const {
+      raffleId,
+      price,
+      title,
+      description,
+      startDate,
+      endDate,
+      rewards,
+      status,
+    } = payload;
+    if (!raffleId) throw new Error("Raffle id is required");
+
+    const raffle = await RaffleModel.findById(raffleId);
+    if (!raffle || raffle.isDeleted) throw new Error("Raffle not found");
+
+    const updateData: any = {};
+
+    if (price !== undefined) {
+      if (raffle.bookedSlots > 0 || price !== raffle.price) {
+        throw new Error("Cannot update price once slots are booked");
+      } else {
+        updateData.price = price;
+      }
+    }
+
+    if (title) updateData.title = title;
+    if (description) updateData.description = description;
+
+    const now = new Date();
+    if (startDate) {
+      const sDate = new Date(startDate);
+      if (sDate <= now) throw new Error("Start Date must be in future");
+      updateData.startDate = sDate;
+    }
+    if (endDate) {
+      const eDate = new Date(endDate);
+      const sDate = startDate ? new Date(startDate) : raffle.startDate;
+      if (eDate <= sDate) throw new Error("End Date must be after start date");
+      updateData.endDate = eDate;
+    }
+
+    if (status && ["INACTIVE", "ACTIVE", "COMPLETED"].includes(status)) {
+      updateData.status = status;
+    }
+
+    // Rewards update
+    if (rewards && Array.isArray(rewards) && rewards.length > 0) {
+      const formattedRewards: any[] = [];
+      for (const reward of rewards) {
+        const {
+          rewardName,
+          rewardType,
+          giftCard,
+          consolationPoints,
+          promoCode,
+          rewardImages,
+        } = reward;
+
+        if (!rewardName || !consolationPoints || !promoCode || !rewardType) {
+          throw new Error(
+            "rewardName, consolationPoints, promoCode, and rewardType are required"
+          );
         }
-        const checkExist = await RaffleModel.findOne({
-          _id:raffleId,
-          isDeleted:false,
-        })
-        if(!checkExist){
-          throw new Error("Raffle Not Found.")
+
+        if (rewardType === "PHYSICAL" && giftCard)
+          throw new Error("Physical reward cannot have a giftCard");
+        if (rewardType === "DIGITAL" && !giftCard)
+          throw new Error("GiftCard is required for Digital reward");
+
+        if (giftCard) {
+          const checkGiftExist = await GiftCategoryModel.findOne({
+            _id: giftCard,
+            isDeleted: false,
+          });
+          if (!checkGiftExist)
+            throw new Error("Gift Category not found or invalid");
         }
+
+        if (promoCode) {
+          const checkPromo = await PromoCodeModel.findOne({
+            _id: promoCode,
+            isDeleted: false,
+            status: "AVAILABLE",
+          });
+          if (!checkPromo) throw new Error("Promo Code not found or invalid");
+        }
+
+        formattedRewards.push({
+          rewardName,
+          rewardType,
+          giftCard: giftCard || null,
+          consolationPoints,
+          promoCode: promoCode || null,
+          rewardImages: Array.isArray(rewardImages) ? rewardImages : [],
+        });
+      }
+
+      updateData.rewards = formattedRewards;
+    }
+
+    const updatedRaffle = await RaffleModel.findByIdAndUpdate(
+      raffleId,
+      { $set: updateData },
+      { new: true }
+    ).lean();
+
+    return updatedRaffle;
+  },
+};
+
+export const UserServices = {
+  getUsers: async (payload: any) => {
+    const { status, page, limit, sort, search } = payload;
+
+    const pageNumber = parseInt(page, 10) || 1;
+    const limitNumber = parseInt(limit, 10) || 10;
+    const skip = (pageNumber - 1) * limitNumber;
+
+    const filter: any = {role: "USER"};
+
+    if (status) {
+      if (status.toLowerCase() === "active") {
+        filter.isBlocked = false;
+      } else if (status.toLowerCase() === "inactive") {
+        filter.isBlocked = true;
+      } else {
+        throw new Error("Invalid status. Allowed values: active, inactive");
+      }
+    }
+
+    if (search) {
+      filter.userName = { $regex: search, $options: "i" };
+    }
+
+    // Sorting
+    let sortOption: any = { totalPoints: -1 };
+    if (sort) {
+      if (sort.toLowerCase() === "asc" || sort.toLowerCase() === "ascending") {
+        sortOption = { totalPoints: 1 };
+      } else if (
+        sort.toLowerCase() === "desc" ||
+        sort.toLowerCase() === "descending"
+      ) {
+        sortOption = { totalPoints: -1 };
+      }
+    }
+    const totalUsers = await UserModel.countDocuments(filter);
+
+    const rawUsers = await UserModel.find(filter)
+      .skip(skip)
+      .limit(limitNumber)
+      .sort(sortOption)
+      .select("_id userName email totalPoints role isVerifiedEmail isVerifiedPhone isBlocked isDeleted totalPoints createdAt updatedAt")
+      .lean();
+
+    return {
+      data: rawUsers,
+      pagination: {
+        total: totalUsers,
+        page: pageNumber,
+        limit: limitNumber,
+        totalPages: Math.ceil(totalUsers / limitNumber),
+      },
+    };
+  },
+  getSingleUser:async(payload:any) =>{
+    const {userId} = payload;
+    if(!userId){
+      throw new Error("User id is required");
+    }
+
+    const user = await UserModel.findOne({
+      _id:userId,
+    })
+    .select("_id userName email totalPoints role isVerifiedEmail isVerifiedPhone isBlocked isDeleted totalPoints createdAt updatedAt")
+    .lean()
+
+    if(!user){
+      throw new Error("User Not found.")
+    }
+    let shippingData = {};
+    const shippingDetails = await ShippingAddressModel.findOne({
+      userId:payload.userId
+    }) .select("country state address city postalCode countryCode phoneNumber")
+    if(!shippingDetails){
+      shippingData = {}
+    }else{
+      shippingData = shippingDetails.toObject()
+    }
+   
+    return {...user , ...shippingData};
+  },
+  blockUnblockUser:async(payload:any) =>{
+    const {status, userId} = payload;
+    const ALLOWED_STATUS = ["active", "inactive"]
+     if(!userId || !status){
+      throw new Error("userId and status requried")
+    }
+    if (status && !ALLOWED_STATUS.includes(status)) {
+      throw new Error(
+        `Invalid status. Allowed values: ${ALLOWED_STATUS.join(", ")}`
+      );
+    }
+
+    const user = await UserModel.findById({
+      _id:userId
+    })
+    if(!user){
+      throw new Error("User not Found")
+    }
+    if(status === "active" && user.isDeleted ===false && user.isBlocked ===false){
+      throw new Error ("User is already Active")
+    }
+    if(status === "inactive" && user.isDeleted ===true && user.isBlocked ===true){
+      throw new Error("User is already blocked")
+    }
   },
 };
