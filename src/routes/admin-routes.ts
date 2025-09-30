@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { uploadCSV } from "src/config/multer";
-import { getAllUsers, getSingleUser } from "src/controllers/admin/admin-user-controller";
+import { blockUnblockUser, getAllUsers, getSingleUser } from "src/controllers/admin/admin-user-controller";
 import {
   addCategory,
   addGiftCard,
@@ -21,6 +21,7 @@ import {
   getRaffleById,
   updateRaffle,
 } from "src/controllers/admin/raffle-controller";
+import { createRedemptionLadder, getAllLadders } from "src/controllers/admin/redemption-ladder-controller";
 import {
   getAdminData,
   updateAdminData,
@@ -55,4 +56,8 @@ router.route("/raffle/:id").get(getRaffleById).delete(deleteRaffle);
 
 router.get("/getUsers",getAllUsers)
 router.route("/user/:id").get(getSingleUser)
+router.post("/block-unblock",blockUnblockUser)
+
+// Redemption Ladder API's
+router.route("/redemption-ladder").post(createRedemptionLadder).get(getAllLadders)
 export { router };

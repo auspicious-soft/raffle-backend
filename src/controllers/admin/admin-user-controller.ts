@@ -45,5 +45,15 @@ export const blockUnblockUser = async (req: Request, res: Response) => {
     if (!userId || !status) {
       throw new Error("userId and status requried");
     }
-  } catch (error) {}
+  const response = await UserServices.blockUnblockUser({
+      userId,
+      status,
+    });
+    return OK(res, response || {});
+  } catch (err: any) {
+    if (err.message) {
+      return BADREQUEST(res, err.message);
+    }
+    return INTERNAL_SERVER_ERROR(res);
+  }
 };

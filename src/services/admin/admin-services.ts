@@ -1,9 +1,10 @@
 import csvParser from "csv-parser";
-import mongoose from "mongoose";
+import mongoose, { Types } from "mongoose";
 import { GiftCardModel } from "src/models/admin/gift-card-schema";
 import { GiftCategoryModel } from "src/models/admin/gift-category-schema";
 import { PromoCodeModel } from "src/models/admin/promo-code-schema";
 import { RaffleModel } from "src/models/admin/raffle-schema";
+import { RedemptionModel } from "src/models/admin/redemption-ladder-schema";
 import { UserModel } from "src/models/user/user-schema";
 import { ShippingAddressModel } from "src/models/user/user-shipping-schema";
 import { Readable } from "stream";
@@ -239,20 +240,25 @@ export const PromoCodeServices = {
       throw new Error("requriedPromoFields");
     }
     let userName = "";
+    let userId : any;
+    let query: any = { isDeleted: false };
 
     if (promoType === "PRIVATE") {
       if (!associatedTo) {
         throw new Error("User id required to create Private PromoCode");
       }
 
-      const checkExist = await UserModel.findOne({
-        _id: associatedTo,
-        isDeleted: false,
-      });
+      if (Types.ObjectId.isValid(associatedTo)) {
+        query._id = associatedTo;
+      } else {
+        query.userName = associatedTo;
+      }
+      const checkExist = await UserModel.findOne(query);
       if (!checkExist) {
         throw new Error("User not Found");
       }
       userName = checkExist.userName;
+      userId = checkExist._id ;
     }
 
     const expiry = new Date(expiryDate);
@@ -267,7 +273,7 @@ export const PromoCodeServices = {
       totalUses,
       discount,
       userName,
-      associatedTo: associatedTo || null,
+      associatedTo: userId || null,
     });
     return promoData.toObject();
   },
@@ -636,7 +642,7 @@ export const UserServices = {
     const limitNumber = parseInt(limit, 10) || 10;
     const skip = (pageNumber - 1) * limitNumber;
 
-    const filter: any = {role: "USER"};
+    const filter: any = { role: "USER" };
 
     if (status) {
       if (status.toLowerCase() === "active") {
@@ -670,7 +676,9 @@ export const UserServices = {
       .skip(skip)
       .limit(limitNumber)
       .sort(sortOption)
-      .select("_id userName email totalPoints role isVerifiedEmail isVerifiedPhone isBlocked isDeleted totalPoints createdAt updatedAt")
+      .select(
+        "_id userName email totalPoints role isVerifiedEmail isVerifiedPhone isBlocked isDeleted totalPoints createdAt updatedAt"
+      )
       .lean();
 
     return {
@@ -683,56 +691,115 @@ export const UserServices = {
       },
     };
   },
-  getSingleUser:async(payload:any) =>{
-    const {userId} = payload;
-    if(!userId){
+  getSingleUser: async (payload: any) => {
+    const { userId } = payload;
+    if (!userId) {
       throw new Error("User id is required");
     }
 
     const user = await UserModel.findOne({
-      _id:userId,
+      _id: userId,
     })
-    .select("_id userName email totalPoints role isVerifiedEmail isVerifiedPhone isBlocked isDeleted totalPoints createdAt updatedAt")
-    .lean()
+      .select(
+        "_id userName email totalPoints role isVerifiedEmail isVerifiedPhone isBlocked isDeleted totalPoints createdAt updatedAt"
+      )
+      .lean();
 
-    if(!user){
-      throw new Error("User Not found.")
+    if (!user) {
+      throw new Error("User Not found.");
     }
     let shippingData = {};
     const shippingDetails = await ShippingAddressModel.findOne({
-      userId:payload.userId
-    }) .select("country state address city postalCode countryCode phoneNumber")
-    if(!shippingDetails){
-      shippingData = {}
-    }else{
-      shippingData = shippingDetails.toObject()
+      userId: payload.userId,
+    }).select("country state address city postalCode countryCode phoneNumber");
+    if (!shippingDetails) {
+      shippingData = {};
+    } else {
+      shippingData = shippingDetails.toObject();
     }
-   
-    return {...user , ...shippingData};
+
+    return { ...user, ...shippingData };
   },
-  blockUnblockUser:async(payload:any) =>{
-    const {status, userId} = payload;
-    const ALLOWED_STATUS = ["active", "inactive"]
-     if(!userId || !status){
-      throw new Error("userId and status requried")
+  blockUnblockUser: async (payload: any) => {
+    const { status, userId } = payload;
+    const ALLOWED_STATUS = ["active", "inactive"];
+
+    if (!userId || !status) {
+      throw new Error("userId and status are required");
     }
-    if (status && !ALLOWED_STATUS.includes(status)) {
+
+    if (!ALLOWED_STATUS.includes(status.toLowerCase())) {
       throw new Error(
         `Invalid status. Allowed values: ${ALLOWED_STATUS.join(", ")}`
       );
     }
 
-    const user = await UserModel.findById({
-      _id:userId
-    })
-    if(!user){
-      throw new Error("User not Found")
+    const user = await UserModel.findById(userId).lean();
+    if (!user) {
+      throw new Error("User not found");
     }
-    if(status === "active" && user.isDeleted ===false && user.isBlocked ===false){
-      throw new Error ("User is already Active")
+
+    if (status.toLowerCase() === "active") {
+      if (!user.isBlocked && !user.isDeleted) {
+        throw new Error("User is already active");
+      }
+
+      await UserModel.findByIdAndUpdate(userId, {
+        $set: { isBlocked: false, isDeleted: false },
+      });
+
+      return { message: "User has been unblocked (active)" };
     }
-    if(status === "inactive" && user.isDeleted ===true && user.isBlocked ===true){
-      throw new Error("User is already blocked")
+
+    if (status.toLowerCase() === "inactive") {
+      if (user.isBlocked && user.isDeleted) {
+        throw new Error("User is already blocked");
+      }
+
+      await UserModel.findByIdAndUpdate(userId, {
+        $set: { isBlocked: true, isDeleted: true },
+      });
+
+      return { message: "User has been blocked (inactive)" };
     }
+  },
+};
+
+export const RedempLadder = {
+  createLadder: async (payload: any) => {
+    const { name, requiredPoints, categories } = payload;
+    if (!name || !requiredPoints || !categories) {
+      throw new Error("Name, Points and atleast one category requried");
+    }
+    await Promise.all(
+      categories.map(async (cat: any) => {
+        const category = await GiftCategoryModel.findOne({
+          _id: cat,
+          isDeleted: false,
+        });
+        if (!category) {
+          throw new Error(`Category not found or deleted: ${cat}`);
+        }
+      })
+    );
+    const ladder = await RedemptionModel.create({
+      name,
+      requiredPoints,
+      categories,
+    });
+    return ladder.toObject();
+  },
+  getAllLadders: async (payload: any) => {
+    const totalCount = await RedemptionModel.countDocuments();
+    const ladders = await RedemptionModel.find({ isDeleted: false })
+      .populate({
+        path: "categories",
+        select: "companyName _id",
+      })
+      .select("-__v")
+      .sort({ requiredPoints: 1 })
+      .lean();
+
+    return { totalLadders: totalCount, ladders };
   },
 };

@@ -1,6 +1,4 @@
 import mongoose, { Date, Document, Schema } from "mongoose";
-import { boolean } from "zod";
-import { required } from "zod/v4/core/util.cjs";
 
 export interface IRewardDetails extends Document {
   rewardName: string;
