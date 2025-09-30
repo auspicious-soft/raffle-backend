@@ -240,7 +240,7 @@ export const PromoCodeServices = {
       throw new Error("requriedPromoFields");
     }
     let userName = "";
-    let userId : any;
+    let userId: any;
     let query: any = { isDeleted: false };
 
     if (promoType === "PRIVATE") {
@@ -258,7 +258,7 @@ export const PromoCodeServices = {
         throw new Error("User not Found");
       }
       userName = checkExist.userName;
-      userId = checkExist._id ;
+      userId = checkExist._id;
     }
 
     const expiry = new Date(expiryDate);
@@ -286,6 +286,7 @@ export const PromoCodeServices = {
 
     const filter: any = {
       status: { $ne: "EXPIRED" },
+      isDeleted:false,
     };
 
     if (type) {
@@ -796,10 +797,23 @@ export const RedempLadder = {
         path: "categories",
         select: "companyName _id",
       })
-      .select("-__v")
+      .select("-__v -createdAt -updatedAt")
       .sort({ requiredPoints: 1 })
       .lean();
 
     return { totalLadders: totalCount, ladders };
+  },
+  getSingleLadder: async (payload: any) => {
+    const { ladderId } = payload;
+    if (!ladderId) {
+      throw new Error("Ladder id is requried");
+    }
+    const ladder = await RedemptionModel.findOne({_id:ladderId, isDeleted:false})
+    .lean()
+    .select("-__v -createdAt -updatedAt");
+    if(!ladder){
+      throw new Error("Redemption Ladder not found.")
+    };
+    return ladder;
   },
 };
