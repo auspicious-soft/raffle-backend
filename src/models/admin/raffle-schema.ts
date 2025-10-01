@@ -101,7 +101,7 @@ const raffleSchema = new Schema<IRaffle>(
         rewardStatus: {
           type: String,
           default: "",
-          enum: ["DELIVERED", ""],
+          enum: ["DELIVERED", "GRANTED","SHIPPED" ,""],
         },
       },
     ],

@@ -572,60 +572,79 @@ export const RaffleServices = {
       updateData.status = status;
     }
 
-    // Rewards update
-    if (rewards && Array.isArray(rewards) && rewards.length > 0) {
-      const formattedRewards: any[] = [];
-      for (const reward of rewards) {
-        const {
-          rewardName,
-          rewardType,
-          giftCard,
-          consolationPoints,
-          promoCode,
-          rewardImages,
-        } = reward;
+if (rewards && Array.isArray(rewards) && rewards.length > 0) {
+  const existingRewards = raffle.rewards.map(r => r.toObject?.() || r); 
+  const updatedRewards: any[] = [];
 
-        if (!rewardName || !consolationPoints || !promoCode || !rewardType) {
-          throw new Error(
-            "rewardName, consolationPoints, promoCode, and rewardType are required"
-          );
-        }
+  for (let i = 0; i < rewards.length; i++) {
+    const incoming = rewards[i];
+    const current = existingRewards[i] || {}; 
+    const {
+      rewardName,
+      rewardType,
+      giftCard,
+      consolationPoints,
+      promoCode,
+      rewardImages,
+      rewardStatus,
+    } = incoming;
 
-        if (rewardType === "PHYSICAL" && giftCard)
-          throw new Error("Physical reward cannot have a giftCard");
-        if (rewardType === "DIGITAL" && !giftCard)
-          throw new Error("GiftCard is required for Digital reward");
-
-        if (giftCard) {
-          const checkGiftExist = await GiftCategoryModel.findOne({
-            _id: giftCard,
-            isDeleted: false,
-          });
-          if (!checkGiftExist)
-            throw new Error("Gift Category not found or invalid");
-        }
-
-        if (promoCode) {
-          const checkPromo = await PromoCodeModel.findOne({
-            _id: promoCode,
-            isDeleted: false,
-            status: "AVAILABLE",
-          });
-          if (!checkPromo) throw new Error("Promo Code not found or invalid");
-        }
-
-        formattedRewards.push({
-          rewardName,
-          rewardType,
-          giftCard: giftCard || null,
-          consolationPoints,
-          promoCode: promoCode || null,
-          rewardImages: Array.isArray(rewardImages) ? rewardImages : [],
-        });
-      }
-
-      updateData.rewards = formattedRewards;
+    if ("rewardName" in incoming && !rewardName) {
+      throw new Error("rewardName cannot be empty");
     }
+    if ("consolationPoints" in incoming && !consolationPoints) {
+      throw new Error("consolationPoints cannot be empty");
+    }
+    if ("promoCode" in incoming && !promoCode) {
+      throw new Error("promoCode cannot be empty");
+    }
+    if ("rewardType" in incoming && !rewardType) {
+      throw new Error("rewardType cannot be empty");
+    }
+    if (rewardType === "PHYSICAL" && giftCard) {
+      throw new Error("Physical reward cannot have a giftCard");
+    }
+    if (rewardType === "DIGITAL" && !giftCard) {
+      throw new Error("GiftCard is required for Digital reward");
+    }
+
+    if (giftCard) {
+      const checkGiftExist = await GiftCategoryModel.findOne({
+        _id: giftCard,
+        isDeleted: false,
+      });
+      if (!checkGiftExist)
+        throw new Error("Gift Category not found or invalid");
+    }
+
+    if (promoCode) {
+      const checkPromo = await PromoCodeModel.findOne({
+        _id: promoCode,
+        isDeleted: false,
+        status: "AVAILABLE",
+      });
+      if (!checkPromo) throw new Error("Promo Code not found or invalid");
+    }
+    updatedRewards.push({
+      rewardName: rewardName ?? current.rewardName,
+      rewardType: rewardType ?? current.rewardType,
+      giftCard: giftCard !== undefined ? giftCard : current.giftCard,
+      consolationPoints:
+        consolationPoints !== undefined
+          ? consolationPoints
+          : current.consolationPoints,
+      promoCode: promoCode !== undefined ? promoCode : current.promoCode,
+      rewardStatus: rewardStatus ?? current.rewardStatus,
+      rewardImages:
+        rewardImages !== undefined
+          ? Array.isArray(rewardImages)
+            ? rewardImages
+            : current.rewardImages
+          : current.rewardImages,
+    });
+  }
+  updateData.rewards = updatedRewards;
+}
 
     const updatedRaffle = await RaffleModel.findByIdAndUpdate(
       raffleId,

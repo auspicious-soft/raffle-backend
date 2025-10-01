@@ -1,4 +1,5 @@
 import { updateUser } from "src/controllers/user/profile-controller";
+import { RaffleModel } from "src/models/admin/raffle-schema";
 import { OtpModel } from "src/models/system/otp-schema";
 import { UserModel } from "src/models/user/user-schema";
 import { ShippingAddressModel } from "src/models/user/user-shipping-schema";
@@ -79,13 +80,12 @@ export const profileSerivce = {
 
     await shippingAddress.save();
 
-
     await UserModel.updateOne(
       { _id: payload.userId },
       {
         $set: {
           isVerifiedPhone: true,
-          pendingIsPhoneVerified: true
+          pendingIsPhoneVerified: true,
         },
       }
     );
@@ -96,8 +96,8 @@ export const profileSerivce = {
         $set: {
           phoneNumber: shippingAddress.phoneNumber,
           countryCode: shippingAddress.countryCode,
-          pendingPhoneNumber:"",
-          pendingCountryCode:"",
+          pendingPhoneNumber: "",
+          pendingCountryCode: "",
         },
       }
     );
@@ -107,67 +107,65 @@ export const profileSerivce = {
     return { success: true };
   },
 
-updateUser: async (payload: any) => {
-  const currentShipping = await ShippingAddressModel.findOne({
-    userId: payload._id,
-  }).lean();
+  updateUser: async (payload: any) => {
+    const currentShipping = await ShippingAddressModel.findOne({
+      userId: payload._id,
+    }).lean();
 
-  let updateData: any = {
-    address: payload.address,
-    country: payload.country,
-    state: payload.state,
-    postalCode: payload.postalCode,
-  };
-  let otpSent = false;
+    let updateData: any = {
+      address: payload.address,
+      country: payload.country,
+      state: payload.state,
+      postalCode: payload.postalCode,
+    };
+    let otpSent = false;
 
-  if (
-    payload.phoneNumber &&
-    payload.phoneNumber !== currentShipping?.phoneNumber
-  ) {
-    updateData.pendingPhoneNumber = payload.phoneNumber;
-    updateData.pendingCountryCode = payload.countryCode;
-    updateData.pendingPhoneExpiry = new Date(Date.now() + 5 * 60 * 1000);
+    if (
+      payload.phoneNumber &&
+      payload.phoneNumber !== currentShipping?.phoneNumber
+    ) {
+      updateData.pendingPhoneNumber = payload.phoneNumber;
+      updateData.pendingCountryCode = payload.countryCode;
+      updateData.pendingPhoneExpiry = new Date(Date.now() + 5 * 60 * 1000);
 
-     await generateAndSendOtp(
-      payload.phoneNumber,
-      "VERIFY_PHONE",
-      "PHONE",
-      "USER"
-    );
-    otpSent = true;
+      await generateAndSendOtp(
+        payload.phoneNumber,
+        "VERIFY_PHONE",
+        "PHONE",
+        "USER"
+      );
+      otpSent = true;
+    }
 
-  }
+    const userInformation = await ShippingAddressModel.findOneAndUpdate(
+      { userId: payload._id },
+      { $set: updateData },
+      { new: true }
+    ).lean();
 
-  const userInformation = await ShippingAddressModel.findOneAndUpdate(
-    { userId: payload._id },
-    { $set: updateData },
-    { new: true }
-  ).lean();
-
-  const user = await UserModel.findByIdAndUpdate(
-    payload._id,
-    {
-      $set: {
-        userName: payload?.userName,
+    const user = await UserModel.findByIdAndUpdate(
+      payload._id,
+      {
+        $set: {
+          userName: payload?.userName,
+        },
       },
-    },
-    { new: true }
-  ).lean();
+      { new: true }
+    ).lean();
 
-  return {
-    _id: payload._id,
-    userName: user?.userName || "",
-    phoneNumber: userInformation?.phoneNumber || "", 
-    countryCode: userInformation?.countryCode || "",
-    address: userInformation?.address || "",
-    country: userInformation?.country || "",
-    state: userInformation?.state || "",
-    postalCode: userInformation?.postalCode || "",
-    pendingPhoneNumber: userInformation?.pendingPhoneNumber || "",
-    pendingCountryCode: userInformation?.pendingCountryCode || "",
-  };
-},
-
+    return {
+      _id: payload._id,
+      userName: user?.userName || "",
+      phoneNumber: userInformation?.phoneNumber || "",
+      countryCode: userInformation?.countryCode || "",
+      address: userInformation?.address || "",
+      country: userInformation?.country || "",
+      state: userInformation?.state || "",
+      postalCode: userInformation?.postalCode || "",
+      pendingPhoneNumber: userInformation?.pendingPhoneNumber || "",
+      pendingCountryCode: userInformation?.pendingCountryCode || "",
+    };
+  },
 };
 
 export const shippingServices = {
@@ -220,5 +218,62 @@ export const shippingServices = {
       messageKeys.push("otpSent");
     }
     return { shippingAddress, messageKeys };
+  },
+};
+
+export const raffleServices = {
+  getActiveRaffle: async (payload: any) => {
+    const { type, page, limit } = payload;
+    const ALLOWED_TYPE = ["PHYSICAL", "DIGITAL"];
+
+    if (type && !ALLOWED_TYPE.includes(type)) {
+      throw new Error(
+        `Invalid Type. Allowed values: ${ALLOWED_TYPE.join(", ")}`
+      );
+    }
+
+    const pageNumber = parseInt(page, 10);
+    const limitNumber = parseInt(limit, 10);
+    const skip = (pageNumber - 1) * limitNumber;
+    const filter: any = {
+      status: "ACTIVE",
+      isDeleted: false,
+    };
+
+    if (type && ALLOWED_TYPE.includes(type)) {
+      filter["rewards.rewardType"] = type;
+    }
+    const now = new Date();
+    const pipeline: any[] = [
+      { $match: filter },
+      {
+        $addFields: {
+          isOngoing: {
+            $and: [{ $lte: ["$startDate", now] }, { $gte: ["$endDate", now] }],
+          },
+        },
+      },
+      {
+        $sort: {
+          isOngoing: -1,
+          startDate: 1,
+          createdAt: -1,
+        },
+      },
+      { $skip: skip },
+      { $limit: limitNumber },
+    ];
+
+  const rawRaffles = await RaffleModel.aggregate(pipeline);
+  const totalRaffles = await RaffleModel.countDocuments(filter)
+    return {
+      data: rawRaffles,
+      pagination: {
+        total: totalRaffles,
+        page: pageNumber,
+        limit: limitNumber,
+        totalPages: Math.ceil(totalRaffles / limitNumber),
+      },
+    };
   },
 };
