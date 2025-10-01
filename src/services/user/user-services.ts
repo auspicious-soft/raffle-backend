@@ -43,8 +43,8 @@ export const profileSerivce = {
 
   verifyPhoneNumber: async (payload: any) => {
     const otpDoc = await OtpModel.findOne({
-      phone: payload.phone,
-      code: payload.otp,
+      phone: payload.method,
+      code: payload.code,
       type: "PHONE",
       purpose: "VERIFY_PHONE",
       userType: "USER",
@@ -59,7 +59,7 @@ export const profileSerivce = {
     });
     if (
       !shippingAddress ||
-      shippingAddress.pendingPhoneNumber !== payload.phone
+      shippingAddress.pendingPhoneNumber !== payload.method
     ) {
       throw new Error("pendingPhoneNotFound");
     }

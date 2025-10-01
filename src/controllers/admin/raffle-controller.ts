@@ -17,6 +17,7 @@ export const createRaffle = async (req: Request, res: Response) => {
       startDate,
       endDate,
       rewards,
+      winnerId,
     } = req.body;
     if (
       !title ||
@@ -39,6 +40,7 @@ export const createRaffle = async (req: Request, res: Response) => {
       startDate,
       endDate,
       rewards,
+      winnerId,
     });
     return CREATED(res, response || {});
   } catch (err: any) {

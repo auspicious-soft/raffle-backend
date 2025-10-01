@@ -8,6 +8,6 @@ const router = Router();
 router.post("/shipping-details",shippingDetails)
 router.post("/verify-phone",verifyPhoneNumber)
 router.post("/verify-phone-initiate",initiatePhoneVerification)
-router.post("/user-data",getUser)
+router.get("/user-data",getUser)
 router.patch("/user-dataa",updateUser)
 export { router };

@@ -340,6 +340,7 @@ export const RaffleServices = {
       startDate,
       endDate,
       rewards,
+      winnerId,
     } = payload;
     if (
       !title ||
@@ -426,6 +427,7 @@ export const RaffleServices = {
       price,
       totalSlots,
       bookedSlots: 0,
+      winnerId:winnerId || null,
       startDate: new Date(startDate),
       endDate: new Date(endDate),
       rewards: formattedRewards,
@@ -466,8 +468,8 @@ export const RaffleServices = {
     const rawRaffles = await RaffleModel.find(filter)
       .skip(skip)
       .limit(limitNumber)
+      .populate("winnerId", "_id userName")
       .sort({ createdAt: -1 });
-
     const raffles = rawRaffles.map((raffle: any) => raffle.toObject());
     return {
       data: raffles,

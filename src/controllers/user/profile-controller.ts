@@ -109,16 +109,16 @@ export const initiatePhoneVerification = async (
 export const verifyPhoneNumber = async (req: Request, res: Response) => {
   try {
     const userId = req.user._id;
-    const { phone, otp } = req.body;
+    const { method, code } = req.body;
 
-    if (!phone || !otp) {
+    if (!method || !code) {
       throw new Error("phoneAndOtpRequired");
     }
 
     const result = await profileSerivce.verifyPhoneNumber({
       userId,
-      phone,
-      otp,
+      method,
+      code,
     });
     return OK(res, result);
   } catch (err: any) {
