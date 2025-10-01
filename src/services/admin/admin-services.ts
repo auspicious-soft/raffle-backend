@@ -673,14 +673,49 @@ export const UserServices = {
     }
     const totalUsers = await UserModel.countDocuments(filter);
 
-    const rawUsers = await UserModel.find(filter)
-      .skip(skip)
-      .limit(limitNumber)
-      .sort(sortOption)
-      .select(
-        "_id userName email totalPoints role isVerifiedEmail isVerifiedPhone isBlocked isDeleted totalPoints createdAt updatedAt"
-      )
-      .lean();
+ const rawUsers = await UserModel.aggregate([
+  { $match: filter },
+  { $sort: sortOption },
+  { $skip: skip },
+  { $limit: limitNumber },
+  {
+    $lookup: {
+      from: "shippingaddresses",
+      let: { userId: "$_id" },
+      pipeline: [
+        { $match: { $expr: { $eq: ["$userId", "$$userId"] } } },
+        { $sort: { createdAt: -1 } }, 
+        { $limit: 1 },                
+        { $project: { phoneNumber: 1, _id: 0 } } 
+      ],
+      as: "shippingAddress"
+    }
+  },
+  {
+    $addFields: {
+      phoneNumber: {
+        $ifNull: [{ $arrayElemAt: ["$shippingAddress.phoneNumber", 0] }, ""]
+      }
+    }
+  },
+  {
+    $project: {
+      _id: 1,
+      userName: 1,
+      email: 1,
+      totalPoints: 1,
+      role: 1,
+      isVerifiedEmail: 1,
+      isVerifiedPhone: 1,
+      isBlocked: 1,
+      isDeleted: 1,
+      createdAt: 1,
+      updatedAt: 1,
+      phoneNumber: 1
+    }
+  }
+]);
+
 
     return {
       data: rawUsers,
