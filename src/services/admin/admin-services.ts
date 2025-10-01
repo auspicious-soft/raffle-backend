@@ -673,49 +673,51 @@ export const UserServices = {
     }
     const totalUsers = await UserModel.countDocuments(filter);
 
- const rawUsers = await UserModel.aggregate([
-  { $match: filter },
-  { $sort: sortOption },
-  { $skip: skip },
-  { $limit: limitNumber },
-  {
-    $lookup: {
-      from: "shippingaddresses",
-      let: { userId: "$_id" },
-      pipeline: [
-        { $match: { $expr: { $eq: ["$userId", "$$userId"] } } },
-        { $sort: { createdAt: -1 } }, 
-        { $limit: 1 },                
-        { $project: { phoneNumber: 1, _id: 0 } } 
-      ],
-      as: "shippingAddress"
-    }
-  },
-  {
-    $addFields: {
-      phoneNumber: {
-        $ifNull: [{ $arrayElemAt: ["$shippingAddress.phoneNumber", 0] }, ""]
-      }
-    }
-  },
-  {
-    $project: {
-      _id: 1,
-      userName: 1,
-      email: 1,
-      totalPoints: 1,
-      role: 1,
-      isVerifiedEmail: 1,
-      isVerifiedPhone: 1,
-      isBlocked: 1,
-      isDeleted: 1,
-      createdAt: 1,
-      updatedAt: 1,
-      phoneNumber: 1
-    }
-  }
-]);
-
+    const rawUsers = await UserModel.aggregate([
+      { $match: filter },
+      { $sort: sortOption },
+      { $skip: skip },
+      { $limit: limitNumber },
+      {
+        $lookup: {
+          from: "shippingaddresses",
+          let: { userId: "$_id" },
+          pipeline: [
+            { $match: { $expr: { $eq: ["$userId", "$$userId"] } } },
+            { $sort: { createdAt: -1 } },
+            { $limit: 1 },
+            { $project: { phoneNumber: 1, _id: 0 } },
+          ],
+          as: "shippingAddress",
+        },
+      },
+      {
+        $addFields: {
+          phoneNumber: {
+            $ifNull: [
+              { $arrayElemAt: ["$shippingAddress.phoneNumber", 0] },
+              "",
+            ],
+          },
+        },
+      },
+      {
+        $project: {
+          _id: 1,
+          userName: 1,
+          email: 1,
+          totalPoints: 1,
+          role: 1,
+          isVerifiedEmail: 1,
+          isVerifiedPhone: 1,
+          isBlocked: 1,
+          isDeleted: 1,
+          createdAt: 1,
+          updatedAt: 1,
+          phoneNumber: 1,
+        },
+      },
+    ]);
 
     return {
       data: rawUsers,
@@ -849,8 +851,12 @@ export const RedempLadder = {
       _id: ladderId,
       isDeleted: false,
     })
-      .lean()
-      .select("-__v -createdAt -updatedAt");
+      .populate({
+        path: "categories",
+        select: "companyName _id",
+      })
+      .select("-__v -createdAt -updatedAt")
+      .lean();
     if (!ladder) {
       throw new Error("Redemption Ladder not found.");
     }
@@ -875,8 +881,8 @@ export const RedempLadder = {
 
   updateLadder: async (payload: any) => {
     const { ladderId, ...fieldsToUpdate } = payload;
-    if (!ladderId){
-       throw new Error("Ladder id is required");
+    if (!ladderId) {
+      throw new Error("Ladder id is required");
     }
 
     const ladder = await RedemptionModel.findById(ladderId);
