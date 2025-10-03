@@ -1,12 +1,16 @@
 import mongoose from "mongoose";
+import stripe from "src/config/stripe";
 import { updateUser } from "src/controllers/user/profile-controller";
+import { PromoCodeModel } from "src/models/admin/promo-code-schema";
 import { RaffleModel } from "src/models/admin/raffle-schema";
 import { OtpModel } from "src/models/system/otp-schema";
 import { CartModel } from "src/models/user/cart-schema";
 import { CartQueueModel } from "src/models/user/cart_queue-schema";
+import { TransactionModel } from "src/models/user/transaction-schema";
 import { UserModel } from "src/models/user/user-schema";
 import { ShippingAddressModel } from "src/models/user/user-shipping-schema";
 import { generateAndSendOtp } from "src/utils/helper";
+
 
 export const profileSerivce = {
   getUser: async (payload: any) => {
@@ -400,7 +404,7 @@ export const cartServices = {
     const now = new Date();
 
     const queue = await CartQueueModel.findOne({ userId });
-    if (!queue || queue.expiresAt <= now) return  {} ; 
+    if (!queue || queue.expiresAt <= now) return {};
 
     const cartItems = await CartModel.findOne({
       userId: userId,
@@ -408,6 +412,169 @@ export const cartServices = {
       .lean()
       .populate("items", "_id title price")
       .select("-__v -createdAt -expiresAt -updatedAt -items._id");
-    return cartItems || {} ;
+    return cartItems || {};
+  },
+};
+
+export const PromoServices = {
+  applyPromo: async (payload: any) => {
+    const { reedemCode, cartTotal, userId } = payload;
+
+    if (!userId || !reedemCode || !cartTotal) {
+      throw new Error("UserId, promoCode, and cartTotal are required");
+    }
+    const user = await UserModel.findOne({ _id: userId, isDeleted: false });
+    if (!user) throw new Error("User not found");
+
+    const promo = await PromoCodeModel.findOne({
+      reedemCode: reedemCode,
+      isDeleted: false,
+    });
+
+    if (!promo) throw new Error("Invalid promo code");
+    const now = new Date();
+    if (promo.expiryDate <= now) throw new Error("Promo code expired");
+    if (promo.status !== "AVAILABLE") throw new Error("Promo not available");
+    if (promo.promoUsed >= promo.totalUses)
+      throw new Error("Promo usage limit reached");
+    if (
+      promo.promoType === "PRIVATE" &&
+      promo.associatedTo?.toString() !== userId
+    ) {
+      throw new Error("Promo not valid for this user");
+    }
+    const discountAmount = (cartTotal * promo.discount) / 100;
+    const finalAmount = cartTotal - discountAmount;
+    return {
+      valid: true,
+      promoCode: promo.reedemCode,
+      discount: promo.discount,
+      discountAmount,
+      finalAmount,
+    };
+  },
+};
+
+
+export const transactionService = {
+  createTransaction: async (payload: {
+    userId: string;
+    raffleIds: string[];
+    amount: { subtotal: number; discount: number; total: number; currency: string };
+    promoCode?: string;
+  }) => {
+    const session = await mongoose.startSession();
+    session.startTransaction();
+
+    try {
+      const { userId, raffleIds, amount, promoCode } = payload;
+
+      let promoDetails = undefined;
+      let promoObjId = null;
+
+      if (promoCode) {
+        const promo = await PromoCodeModel.findOne({ reedemCode: promoCode, isDeleted: false }).session(session);
+        if (!promo) throw new Error("Invalid promo code");
+        if (promo.expiryDate <= new Date()) throw new Error("Promo code expired");
+        if (promo.totalUses <= promo.promoUsed) throw new Error("Promo code usage limit reached");
+
+        promoObjId = promo._id;
+        promoDetails = {
+          promoCode: promo.reedemCode,
+          discountValue: promo.discount,
+        };
+      }
+
+      const paymentIntent = await stripe.paymentIntents.create({
+        amount: Math.round(amount.total * 100), 
+        currency: amount.currency,
+        metadata: { userId, raffleIds: raffleIds.join(",") },
+      });
+
+      // Create transaction in DB
+      const transaction = await TransactionModel.create(
+        [
+          {
+            userId,
+            raffleIds,
+            promoCode: promoObjId,
+            promoDetails,
+            amount,
+            stripe: { paymentIntentId: paymentIntent.id },
+            status: "PENDING",
+          },
+        ],
+        { session }
+      );
+
+      await session.commitTransaction();
+      session.endSession();
+
+      return { transactionId: transaction[0]._id, clientSecret: paymentIntent.client_secret };
+    } catch (err) {
+      await session.abortTransaction();
+      session.endSession();
+      throw err;
+    }
+  },
+
+  handleWebhook: async (event: any) => {
+    const session = await mongoose.startSession();
+    session.startTransaction();
+
+    try {
+      let transaction;
+
+      switch (event.type) {
+        case "payment_intent.succeeded":
+          const paymentIntent = event.data.object;
+          transaction = await TransactionModel.findOne({ "stripe.paymentIntentId": paymentIntent.id }).session(session);
+          if (!transaction) throw new Error("Transaction not found");
+
+          // Update transaction status
+          transaction.status = "SUCCESS";
+          await transaction.save({ session });
+
+          // Increment bookedSlots for all raffles
+          await RaffleModel.updateMany(
+            { _id: { $in: transaction.raffleIds } },
+            { $inc: { bookedSlots: 1 } },
+            { session }
+          );
+
+          // Increment promoUsed count if promo applied
+          if (transaction.promoCode) {
+            await PromoCodeModel.updateOne(
+              { _id: transaction.promoCode },
+              { $inc: { promoUsed: 1 } },
+              { session }
+            );
+          }
+          break;
+
+        case "payment_intent.canceled":
+        case "payment_intent.payment_failed":
+          const failedIntent = event.data.object;
+          transaction = await TransactionModel.findOne({ "stripe.paymentIntentId": failedIntent.id }).session(session);
+          if (!transaction) throw new Error("Transaction not found");
+
+          transaction.status = event.type === "payment_intent.canceled" ? "CANCELED" : "FAILED";
+          await transaction.save({ session });
+          break;
+
+        default:
+          console.log(`Unhandled event type ${event.type}`);
+          break;
+      }
+
+      await session.commitTransaction();
+      session.endSession();
+
+      return { success: true };
+    } catch (err) {
+      await session.abortTransaction();
+      session.endSession();
+      throw err;
+    }
   },
 };

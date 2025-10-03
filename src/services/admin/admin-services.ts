@@ -239,6 +239,13 @@ export const PromoCodeServices = {
     if (!reedemCode || !expiryDate || !promoType || !totalUses || !discount) {
       throw new Error("requriedPromoFields");
     }
+    const checkName = await PromoCodeModel.findOne({
+      reedemCode:reedemCode,
+      isDeleted:false
+    })
+    if(checkName){
+      throw new Error ("Promo with this code already exist.")
+    }
     let userName = "";
     let userId: any;
     let query: any = { isDeleted: false };
@@ -854,7 +861,7 @@ export const RedempLadder = {
     const ladders = await RedemptionModel.find({ isDeleted: false })
       .populate({
         path: "categories",
-        select: "companyName _id",
+        select: "companyName _id price",
       })
       .select("-__v -createdAt -updatedAt")
       .sort({ requiredPoints: 1 })

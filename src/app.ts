@@ -7,6 +7,9 @@ import { checkAuth } from "./middleware/check-auth";
 import { admin, auth, user } from "./routes";
 import "../cron/giftCardExpiryJob";
 import "../cron/cartUpdateJob";
+import { stripeWebhook } from "./controllers/user/transaction-controller";
+import { router } from "./routes/admin-routes";
+import bodyParser from "body-parser";
 
 
 
@@ -16,6 +19,11 @@ const __dirname = path.dirname(__filename);
 const PORT = process.env.PORT || 8000;
 const app = express();
 
+router.post(
+  "/webhook",
+  bodyParser.raw({ type: "application/json" }),
+  stripeWebhook
+);
 
 app.use(express.json());
 app.set("trust proxy", true);
