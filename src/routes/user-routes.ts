@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { addToCart, getCartItems, removeFromCart } from "src/controllers/user/cart-controller";
 import { getUser, initiatePhoneVerification, shippingDetails, updateUser, verifyPhoneNumber } from "src/controllers/user/profile-controller";
 import { activeRaffles, getSingleRaffle } from "src/controllers/user/user-raffle-controller";
 
@@ -14,4 +15,7 @@ router.patch("/user-dataa",updateUser)
 
 router.get("/active-raffles",activeRaffles)
 router.get("/raffle/:id",getSingleRaffle)
+
+router.route("/cart").post(addToCart).get(getCartItems).put(removeFromCart)
+
 export { router };

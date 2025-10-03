@@ -454,7 +454,7 @@ export const RaffleServices = {
     const pageNumber = parseInt(page, 10);
     const limitNumber = parseInt(limit, 10);
     const skip = (pageNumber - 1) * limitNumber;
-    const filter: any = {};
+    const filter: any = {isDeleted:false};
     if (search) {
       filter.title = { $regex: search, $options: "i" };
     }

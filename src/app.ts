@@ -6,6 +6,8 @@ import connectDB from "./config/db";
 import { checkAuth } from "./middleware/check-auth";
 import { admin, auth, user } from "./routes";
 import "../cron/giftCardExpiryJob";
+import "../cron/cartUpdateJob";
+
 
 
 // Create __dirname equivalent for ES modules

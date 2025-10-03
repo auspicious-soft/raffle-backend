@@ -1,6 +1,9 @@
+import mongoose from "mongoose";
 import { updateUser } from "src/controllers/user/profile-controller";
 import { RaffleModel } from "src/models/admin/raffle-schema";
 import { OtpModel } from "src/models/system/otp-schema";
+import { CartModel } from "src/models/user/cart-schema";
+import { CartQueueModel } from "src/models/user/cart_queue-schema";
 import { UserModel } from "src/models/user/user-schema";
 import { ShippingAddressModel } from "src/models/user/user-shipping-schema";
 import { generateAndSendOtp } from "src/utils/helper";
@@ -264,8 +267,8 @@ export const raffleServices = {
       { $limit: limitNumber },
     ];
 
-  const rawRaffles = await RaffleModel.aggregate(pipeline);
-  const totalRaffles = await RaffleModel.countDocuments(filter)
+    const rawRaffles = await RaffleModel.aggregate(pipeline);
+    const totalRaffles = await RaffleModel.countDocuments(filter);
     return {
       data: rawRaffles,
       pagination: {
@@ -275,5 +278,136 @@ export const raffleServices = {
         totalPages: Math.ceil(totalRaffles / limitNumber),
       },
     };
+  },
+};
+
+export const cartServices = {
+  addToCart: async (payload: any) => {
+    const { raffleId, userId } = payload;
+    if (!raffleId || !userId) {
+      throw new Error("Raffle id and user requried");
+    }
+    const user = await UserModel.findOne({
+      _id: userId,
+      isDeleted: false,
+    });
+    if (!user) {
+      throw new Error("User not found");
+    }
+    const session = await mongoose.startSession();
+    session.startTransaction();
+
+    try {
+      const existingCart = await CartModel.findOne({
+        userId,
+        items: raffleId,
+      }).session(session);
+      if (existingCart) {
+        throw new Error("Raffle already in cart");
+      }
+      const raffle = await RaffleModel.findOneAndUpdate(
+        {
+          _id: raffleId,
+          isDeleted: false,
+          status: "ACTIVE",
+          $expr: { $lt: ["$bookedSlots", "$totalSlots"] },
+        },
+        { $inc: { bookedSlots: 1 } },
+        { new: true, session }
+      );
+      if (!raffle) {
+        throw new Error("Raffle not found, inactive, or all slots booked");
+      }
+      const cart = await CartModel.findOneAndUpdate(
+        { userId },
+        {
+          $addToSet: { items: raffle._id },
+          $setOnInsert: { expiresAt: new Date(Date.now() + 10 * 60 * 1000) }, // set expiry only on new cart
+        },
+        { upsert: true, new: true, session }
+      );
+
+      const expiryTime = new Date(Date.now() + 10 * 60 * 1000); // 10 mins
+      await CartQueueModel.findOneAndUpdate(
+        { userId },
+        { $addToSet: { items: raffle._id }, $set: { expiresAt: expiryTime } },
+        { upsert: true, new: true, session }
+      );
+
+      await session.commitTransaction();
+      session.endSession();
+
+      return cart;
+    } catch (error) {
+      await session.abortTransaction();
+      session.endSession();
+      throw error;
+    }
+  },
+  removeFromCart: async (payload: any) => {
+    const { raffleId, userId } = payload;
+
+    if (!raffleId || !userId) {
+      throw new Error("Raffle id and user required");
+    }
+
+    const session = await mongoose.startSession();
+    session.startTransaction();
+
+    try {
+      const cart = await CartModel.findOneAndUpdate(
+        { userId },
+        { $pull: { items: raffleId } },
+        { new: true, session }
+      );
+
+      if (!cart) {
+        throw new Error("Raffle not found in cart");
+      }
+
+      await CartQueueModel.findOneAndUpdate(
+        { userId },
+        { $pull: { items: raffleId } },
+        { new: true, session }
+      );
+
+      const raffle = await RaffleModel.findOneAndUpdate(
+        { _id: raffleId, bookedSlots: { $gt: 0 } },
+        { $inc: { bookedSlots: -1 } },
+        { new: true, session }
+      );
+      if (!raffle) {
+        throw new Error("Raffle not found or no booked slots to decrement");
+      }
+
+      await session.commitTransaction();
+      session.endSession();
+      return cart;
+    } catch (error) {
+      await session.abortTransaction();
+      session.endSession();
+      throw error;
+    }
+  },
+  allCartItems: async (payload: any) => {
+    const { userId } = payload;
+
+    const user = await UserModel.findOne({
+      _id: userId,
+      isDeleted: false,
+    });
+    if (!user) throw new Error("User not found");
+    const now = new Date();
+
+    const queue = await CartQueueModel.findOne({ userId });
+    if (!queue || queue.expiresAt <= now) return  {} ; 
+
+    const cartItems = await CartModel.findOne({
+      userId: userId,
+    })
+      .lean()
+      .populate("items", "_id title price")
+      .select("-__v -createdAt -expiresAt -updatedAt -items._id");
+    return cartItems || {} ;
   },
 };
