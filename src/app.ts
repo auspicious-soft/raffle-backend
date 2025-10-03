@@ -19,8 +19,8 @@ const __dirname = path.dirname(__filename);
 const PORT = process.env.PORT || 8000;
 const app = express();
 
-router.post(
-  "/webhook",
+app.post(
+  "/api/webhook",
   bodyParser.raw({ type: "application/json" }),
   stripeWebhook
 );

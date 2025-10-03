@@ -11,7 +11,6 @@ import { UserModel } from "src/models/user/user-schema";
 import { ShippingAddressModel } from "src/models/user/user-shipping-schema";
 import { generateAndSendOtp } from "src/utils/helper";
 
-
 export const profileSerivce = {
   getUser: async (payload: any) => {
     const { userName, email, image, isVerifiedPhone, totalPoints, isBlocked } =
@@ -455,12 +454,16 @@ export const PromoServices = {
   },
 };
 
-
 export const transactionService = {
   createTransaction: async (payload: {
     userId: string;
     raffleIds: string[];
-    amount: { subtotal: number; discount: number; total: number; currency: string };
+    amount: {
+      subtotal: number;
+      discount: number;
+      total: number;
+      currency: string;
+    };
     promoCode?: string;
   }) => {
     const session = await mongoose.startSession();
@@ -473,10 +476,15 @@ export const transactionService = {
       let promoObjId = null;
 
       if (promoCode) {
-        const promo = await PromoCodeModel.findOne({ reedemCode: promoCode, isDeleted: false }).session(session);
+        const promo = await PromoCodeModel.findOne({
+          reedemCode: promoCode,
+          isDeleted: false,
+        }).session(session);
         if (!promo) throw new Error("Invalid promo code");
-        if (promo.expiryDate <= new Date()) throw new Error("Promo code expired");
-        if (promo.totalUses <= promo.promoUsed) throw new Error("Promo code usage limit reached");
+        if (promo.expiryDate <= new Date())
+          throw new Error("Promo code expired");
+        if (promo.totalUses <= promo.promoUsed)
+          throw new Error("Promo code usage limit reached");
 
         promoObjId = promo._id;
         promoDetails = {
@@ -486,9 +494,12 @@ export const transactionService = {
       }
 
       const paymentIntent = await stripe.paymentIntents.create({
-        amount: Math.round(amount.total * 100), 
+        amount: Math.round(amount.total * 100),
         currency: amount.currency,
-        metadata: { userId, raffleIds: raffleIds.join(",") },
+        metadata: {
+          userId: userId.toString(),
+          raffleIds: raffleIds.map((id) => id.toString()).join(","),
+        },
       });
 
       // Create transaction in DB
@@ -510,7 +521,10 @@ export const transactionService = {
       await session.commitTransaction();
       session.endSession();
 
-      return { transactionId: transaction[0]._id, clientSecret: paymentIntent.client_secret };
+      return {
+        transactionId: transaction[0]._id,
+        clientSecret: paymentIntent.client_secret,
+      };
     } catch (err) {
       await session.abortTransaction();
       session.endSession();
@@ -528,21 +542,20 @@ export const transactionService = {
       switch (event.type) {
         case "payment_intent.succeeded":
           const paymentIntent = event.data.object;
-          transaction = await TransactionModel.findOne({ "stripe.paymentIntentId": paymentIntent.id }).session(session);
+          transaction = await TransactionModel.findOne({
+            "stripe.paymentIntentId": paymentIntent.id,
+          }).session(session);
           if (!transaction) throw new Error("Transaction not found");
 
-          // Update transaction status
           transaction.status = "SUCCESS";
           await transaction.save({ session });
 
-          // Increment bookedSlots for all raffles
           await RaffleModel.updateMany(
             { _id: { $in: transaction.raffleIds } },
             { $inc: { bookedSlots: 1 } },
             { session }
           );
 
-          // Increment promoUsed count if promo applied
           if (transaction.promoCode) {
             await PromoCodeModel.updateOne(
               { _id: transaction.promoCode },
@@ -555,10 +568,13 @@ export const transactionService = {
         case "payment_intent.canceled":
         case "payment_intent.payment_failed":
           const failedIntent = event.data.object;
-          transaction = await TransactionModel.findOne({ "stripe.paymentIntentId": failedIntent.id }).session(session);
+          transaction = await TransactionModel.findOne({
+            "stripe.paymentIntentId": failedIntent.id,
+          }).session(session);
           if (!transaction) throw new Error("Transaction not found");
 
-          transaction.status = event.type === "payment_intent.canceled" ? "CANCELED" : "FAILED";
+          transaction.status =
+            event.type === "payment_intent.canceled" ? "CANCELED" : "FAILED";
           await transaction.save({ session });
           break;
 

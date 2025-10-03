@@ -7,10 +7,10 @@ import Stripe from "stripe";
 export const createTransaction = async (req: Request, res: Response) => {
   try {
     const userData = req.user as any;
-    const { raffleIds, promoCode } = req.body;
+    const { raffleIds, promoCode, amount } = req.body;
 
-    if (!raffleIds || !raffleIds.length) {
-      throw new Error("RaffleIds are required");
+    if (!raffleIds || !raffleIds.length || !amount) {
+      throw new Error("RaffleIds and amount are required");
     }
 
     if (!Array.isArray(raffleIds) || raffleIds.length === 0) {
@@ -21,7 +21,7 @@ export const createTransaction = async (req: Request, res: Response) => {
       userId: userData._id,
       raffleIds,
       promoCode: promoCode || undefined,
-      amount: req.body.amount, // amount object should come from frontend
+      amount:amount
     });
 
     return OK(res, response || {});
