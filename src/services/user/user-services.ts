@@ -10,6 +10,9 @@ import { TransactionModel } from "src/models/user/transaction-schema";
 import { UserModel } from "src/models/user/user-schema";
 import { ShippingAddressModel } from "src/models/user/user-shipping-schema";
 import { generateAndSendOtp } from "src/utils/helper";
+import { io as globalIo } from "../../../src/app";
+import { OrderModel } from "src/models/user/order-schema";
+import { UserRaffleModel } from "src/models/user/user-raffle-schema";
 
 export const profileSerivce = {
   getUser: async (payload: any) => {
@@ -472,6 +475,21 @@ export const transactionService = {
     try {
       const { userId, raffleIds, amount, promoCode } = payload;
 
+      const alreadyPurchased = await UserRaffleModel.find({
+        userId,
+        raffleId: { $in: raffleIds },
+        status: { $in: ["ACTIVE", "CONFIRMED"] },
+      }).session(session);
+
+      if (alreadyPurchased.length > 0) {
+        const purchasedRaffles = alreadyPurchased.map((r) =>
+          r.raffleId.toString()
+        );
+        throw new Error(
+          `User has already purchased the following raffle(s): ${purchasedRaffles.join(", ")}`
+        );
+      }
+
       let promoDetails = undefined;
       let promoObjId = null;
 
@@ -533,64 +551,144 @@ export const transactionService = {
   },
 
   handleWebhook: async (event: any) => {
-    const session = await mongoose.startSession();
-    session.startTransaction();
+  const session = await mongoose.startSession();
+  session.startTransaction();
 
-    try {
-      let transaction;
+  try {
+    let transaction: any;
 
-      switch (event.type) {
-        case "payment_intent.succeeded":
-          const paymentIntent = event.data.object;
-          transaction = await TransactionModel.findOne({
-            "stripe.paymentIntentId": paymentIntent.id,
-          }).session(session);
-          if (!transaction) throw new Error("Transaction not found");
+    switch (event.type) {
+      case "payment_intent.succeeded":
+        const paymentIntent = event.data.object;
 
-          transaction.status = "SUCCESS";
-          await transaction.save({ session });
+        transaction = await TransactionModel.findOne({
+          "stripe.paymentIntentId": paymentIntent.id,
+        }).session(session);
+        if (!transaction) throw new Error("Transaction not found");
 
-          await RaffleModel.updateMany(
-            { _id: { $in: transaction.raffleIds } },
-            { $inc: { bookedSlots: 1 } },
+        // Prevent double processing
+        if (transaction.isProcessed) {
+          await session.commitTransaction();
+          session.endSession();
+          return { success: true };
+        }
+
+        // Mark transaction as SUCCESS
+        transaction.status = "SUCCESS";
+        transaction.isProcessed = true;
+        await transaction.save({ session });
+
+        // Fetch all raffles
+        const raffles = await RaffleModel.find({
+          _id: { $in: transaction.raffleIds },
+        }).session(session);
+
+        if (!raffles || raffles.length === 0)
+          throw new Error("Raffles not found");
+
+        // Update bookedSlots atomically
+        const bulkRaffleOps = raffles.map((r) => ({
+          updateOne: {
+            filter: { _id: r._id, bookedSlots: { $lt: r.totalSlots } },
+            update: { $inc: { bookedSlots: 1 } },
+          },
+        }));
+        await RaffleModel.bulkWrite(bulkRaffleOps, { session });
+
+        // Create Orders in bulk if not exists
+        const ordersData = raffles.map((raffle) => ({
+          userId: transaction.userId,
+          transactionId: transaction._id,
+          raffleId: raffle._id,
+          slotsBooked: 1,
+          pointsSpent: raffle.price,
+          status: "CONFIRMED",
+          raffleSnapshot: {
+            title: raffle.title,
+            price: raffle.price,
+            totalSlots: raffle.totalSlots,
+          },
+        }));
+
+        await OrderModel.insertMany(ordersData, {
+          session,
+          ordered: false, // continue even if duplicates
+        });
+
+        // Create UserRaffles safely using upsert
+        const userRaffleOps = raffles.map((raffle) => ({
+          updateOne: {
+            filter: { userId: transaction.userId, raffleId: raffle._id },
+            update: {
+              userId: transaction.userId,
+              raffleId: raffle._id,
+              orderId: transaction._id,
+              slotNumber: 1,
+              status: "ACTIVE",
+              pointsSpent: 0,
+            },
+            upsert: true,
+          },
+        }));
+
+        await UserRaffleModel.bulkWrite(userRaffleOps, { session });
+
+        // Update promo code usage
+        if (transaction.promoCode) {
+          await PromoCodeModel.updateOne(
+            { _id: transaction.promoCode },
+            { $inc: { promoUsed: 1 } },
             { session }
           );
+        }
 
-          if (transaction.promoCode) {
-            await PromoCodeModel.updateOne(
-              { _id: transaction.promoCode },
-              { $inc: { promoUsed: 1 } },
-              { session }
-            );
-          }
-          break;
+        // Clear user cart
+        await CartModel.deleteOne({ userId: transaction.userId }).session(
+          session
+        );
 
-        case "payment_intent.canceled":
-        case "payment_intent.payment_failed":
-          const failedIntent = event.data.object;
-          transaction = await TransactionModel.findOne({
-            "stripe.paymentIntentId": failedIntent.id,
-          }).session(session);
-          if (!transaction) throw new Error("Transaction not found");
+        await session.commitTransaction();
+        session.endSession();
 
-          transaction.status =
-            event.type === "payment_intent.canceled" ? "CANCELED" : "FAILED";
-          await transaction.save({ session });
-          break;
+        // Emit socket updates
+        if (globalIo) {
+          raffles.forEach((raffle) => {
+            globalIo.emit("raffle:update", {
+              raffleId: raffle._id,
+              bookedSlots: raffle.bookedSlots + 1,
+            });
+          });
+        }
 
-        default:
-          console.log(`Unhandled event type ${event.type}`);
-          break;
-      }
+        break;
 
-      await session.commitTransaction();
-      session.endSession();
+      case "payment_intent.canceled":
+      case "payment_intent.payment_failed":
+        const failedIntent = event.data.object;
+        transaction = await TransactionModel.findOne({
+          "stripe.paymentIntentId": failedIntent.id,
+        }).session(session);
+        if (!transaction) throw new Error("Transaction not found");
 
-      return { success: true };
-    } catch (err) {
-      await session.abortTransaction();
-      session.endSession();
-      throw err;
+        transaction.status =
+          event.type === "payment_intent.canceled" ? "CANCELED" : "FAILED";
+        await transaction.save({ session });
+        break;
+
+      default:
+        console.log(`Unhandled event type ${event.type}`);
+        break;
     }
-  },
+
+    await session.commitTransaction();
+    session.endSession();
+
+    return { success: true };
+  } catch (err) {
+    await session.abortTransaction();
+    session.endSession();
+    throw err;
+  }
+}
+
 };

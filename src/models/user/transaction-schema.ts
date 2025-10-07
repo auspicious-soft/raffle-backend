@@ -20,6 +20,7 @@ export interface ITransaction extends Document {
   };
   status: "PENDING" | "SUCCESS" | "FAILED" | "CANCELED";
   createdAt: Date;
+  isProcessed: boolean;
   updatedAt: Date;
 }
 
@@ -65,6 +66,10 @@ const transactionSchema = new Schema<ITransaction>(
         type: String,
         default: "usd",
       },
+    },
+    isProcessed: {
+      type: Boolean,
+      default: false,
     },
     stripe: {
       paymentIntentId: {

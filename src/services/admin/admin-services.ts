@@ -383,9 +383,9 @@ export const RaffleServices = {
         rewardImages,
       } = reward;
 
-      if (!rewardName || !consolationPoints || !promoCode || !rewardType) {
+      if (!rewardName || !consolationPoints ||  !rewardType) {
         throw new Error(
-          "rewardName, consolationPoints, promocode and RewardType is Required"
+          "rewardName, consolationPoints, RewardType is Required"
         );
       }
 

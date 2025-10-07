@@ -1,4 +1,5 @@
 import { Request, Response } from "express";
+import { RaffleModel } from "src/models/admin/raffle-schema";
 import { cartServices, PromoServices } from "src/services/user/user-services";
 import { BADREQUEST, INTERNAL_SERVER_ERROR, OK } from "src/utils/response";
 
@@ -13,6 +14,15 @@ export const addToCart = async (req: Request, res: Response) => {
       raffleId,
       userId: userData._id,
     });
+     const io = req.app.get("io");
+    const updatedRaffle = await RaffleModel.findById(raffleId).lean();
+    if (updatedRaffle) {
+      io.emit("raffle:update", {
+        raffleId,
+        bookedSlots: updatedRaffle.bookedSlots,
+        totalSlots: updatedRaffle.totalSlots,
+      });
+    }
     return OK(res, response || {});
   } catch (err: any) {
     if (err.message) {
@@ -33,6 +43,15 @@ export const removeFromCart = async (req: Request, res: Response) => {
       raffleId,
       userId: userData._id,
     });
+     const io = req.app.get("io");
+    const updatedRaffle = await RaffleModel.findById(raffleId).lean();
+    if (updatedRaffle) {
+      io.emit("raffle:update", {
+        raffleId,
+        bookedSlots: updatedRaffle.bookedSlots,
+        totalSlots: updatedRaffle.totalSlots,
+      });
+    }
     return OK(res, response || {});
   } catch (err: any) {
     if (err.message) {

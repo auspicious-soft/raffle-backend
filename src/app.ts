@@ -10,6 +10,8 @@ import "../cron/cartUpdateJob";
 import { stripeWebhook } from "./controllers/user/transaction-controller";
 import { router } from "./routes/admin-routes";
 import bodyParser from "body-parser";
+import http from "http";
+import { Server } from "socket.io";
 
 
 
@@ -43,7 +45,17 @@ app.use(express.static(dir));
 var uploadsDir = path.join(__dirname, "uploads");
 app.use("/uploads", express.static(uploadsDir));
 
+const server = http.createServer(app); // Create HTTP server
+export const io = new Server(server, {
+  cors: {
+    origin: "*",
+    methods: ["GET", "POST"],
+  },
+});
+
 connectDB();
+
+app.set("io", io);
 
 app.get("/", (_, res: any) => {
   res.send("Hello world entry point 🚀✅");
@@ -60,5 +72,13 @@ app.use("/api/user", checkAuth(["USER"]) , user)
 
 app.use("/api" , auth);
 
+io.on("connection", (socket) => {
+  console.log("🟢 New client connected:", socket.id);
 
-app.listen(PORT, () => console.log(`Server is listening on port ${PORT}`));
+  socket.on("disconnect", () => {
+    console.log("🔴 Client disconnected:", socket.id);
+  });
+});
+
+server.listen(PORT, () => console.log(`Server is listening on port ${PORT}`));
+// server.listen(8000, () => console.log("Server running on port 8000"));
