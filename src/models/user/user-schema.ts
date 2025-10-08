@@ -32,6 +32,7 @@ export interface IUser extends Document {
   isCardSetupComplete?: boolean;
   hasUsedTrial?: boolean;
   totalPoints?: number;
+  raffleBucks:number;
   shippingAddresses?: IShippingAddress[];
 }
 
@@ -126,6 +127,10 @@ const userSchema = new Schema<IUser>(
       default: false,
     },
     totalPoints: {
+      type: Number,
+      default: 0,
+    },
+     raffleBucks: {
       type: Number,
       default: 0,
     },
