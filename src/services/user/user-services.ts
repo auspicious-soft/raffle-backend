@@ -413,7 +413,7 @@ export const cartServices = {
     })
       .lean()
       .populate("items", "_id title price")
-      .select("-__v -createdAt -expiresAt -updatedAt -items._id");
+      .select("-__v -createdAt -updatedAt -items._id");
     return cartItems || {};
   },
 };
