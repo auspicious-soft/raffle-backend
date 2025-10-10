@@ -104,3 +104,22 @@ export const withdrawRaffle = async (req: Request, res: Response) => {
     return INTERNAL_SERVER_ERROR(res);
   }
 };
+
+
+export const RafflePurchaseHistory = async (req:Request, res:Response) =>{
+ try {
+    const userData = req.user as any;
+    const { page = "1", limit = "10" } = req.query;
+
+    const response = await raffleServices.getRaffleHistory({
+      userId: userData._id,
+      page,
+      limit,
+    });
+
+    return OK(res, response);
+  } catch (err: any) {
+    if (err.message) return BADREQUEST(res, err.message);
+    return INTERNAL_SERVER_ERROR(res);
+  }
+}

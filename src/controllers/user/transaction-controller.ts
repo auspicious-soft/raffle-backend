@@ -80,3 +80,4 @@ export const getAllTransaction = async (req: Request, res: Response) => {
     return INTERNAL_SERVER_ERROR(res);
   }
 };
+

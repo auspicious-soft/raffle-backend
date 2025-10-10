@@ -456,6 +456,55 @@ export const raffleServices = {
       throw err;
     }
   },
+  getRaffleHistory: async (payload: any) => {
+    const { userId, page, limit } = payload;
+    const pageNumber = parseInt(page, 10);
+    const limitNumber = parseInt(limit, 10);
+    const skip = (pageNumber - 1) * limitNumber;
+
+    const filter = { userId, status: "ACTIVE" }; // Only active purchased raffles
+
+    const totalRaffles = await UserRaffleModel.countDocuments(filter);
+    const rawRaffles = await UserRaffleModel.find(filter)
+      .skip(skip)
+      .limit(limitNumber)
+      .populate("raffleId") // fetch raffle details
+      .sort({ createdAt: -1 });
+
+    const raffles = rawRaffles.map((ur: any) => {
+      const raffle = ur.raffleId?.toObject() || {};
+      return {
+        raffleId: raffle._id,
+        title: raffle.title,
+        price: raffle.price,
+        rewards: raffle.rewards.map((r: any) => ({
+          rewardName: r.rewardName,
+          rewardType: r.rewardType,
+          rewardImages: r.rewardImages,
+          giftCard: r.giftCard,
+          consolationPoints: r.consolationPoints,
+          promoCode: r.promoCode,
+          rewardStatus: r.rewardStatus,
+        })),
+        startDate: raffle.startDate,
+        endDate: raffle.endDate,
+        status: raffle.status,
+        slotsBooked: ur.slotNumber || 1,
+        bucksSpent: ur.bucksSpent,
+        purchasedAt: ur.createdAt,
+      };
+    });
+
+    return {
+      data: raffles,
+      pagination: {
+        total: totalRaffles,
+        page: pageNumber,
+        limit: limitNumber,
+        totalPages: Math.ceil(totalRaffles / limitNumber),
+      },
+    };
+  },
 };
 
 export const cartServices = {
