@@ -27,23 +27,22 @@ export const applyPromoCode = async (req: Request, res: Response) => {
 export const createTransaction = async (req: Request, res: Response) => {
   try {
     const userData = req.user as any;
-    const { currency = "usd", promoCode, amount } = req.body;
-
-    if (!amount || amount <= 0) {
-      return BADREQUEST(res, "Amount must be greater than 0");
-    }
+    const { amount, currency = "usd", promoCode } = req.body;
 
     const response = await transactionService.createTransaction({
       userId: userData._id,
       currency,
+      amount,
       promoCodeId: promoCode || undefined,
-      amount: amount,
     });
 
-    return OK(res, response || {});
+    return OK(res, {
+      message: "Checkout session created successfully",
+      ...response,
+    });
   } catch (err: any) {
-    if (err.message) return BADREQUEST(res, err.message);
-    return INTERNAL_SERVER_ERROR(res);
+    console.error("Error creating transaction:", err);
+    return BADREQUEST(res, err.message || "Failed to create transaction");
   }
 };
 

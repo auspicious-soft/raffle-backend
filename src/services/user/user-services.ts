@@ -13,6 +13,7 @@ import { generateAndSendOtp } from "src/utils/helper";
 import { io as globalIo } from "../../../src/app";
 import { OrderModel } from "src/models/user/order-schema";
 import { UserRaffleModel } from "src/models/user/user-raffle-schema";
+import Stripe from "stripe";
 
 export const profileSerivce = {
   getUser: async (payload: any) => {
@@ -690,6 +691,11 @@ export const transactionService = {
 
     try {
       const { userId, currency = "usd", amount, promoCodeId } = payload;
+
+       if (!amount || amount <= 0) {
+        throw new Error("Amount must be greater than 0");
+      }
+
       const amountCents = Math.round(amount * 100);
 
       let promo = null;
@@ -698,15 +704,37 @@ export const transactionService = {
         if (!promo) throw new Error("Promo code not found");
       }
 
-      const paymentIntent = await stripe.paymentIntents.create({
-        amount: amountCents,
-        currency,
+      // Calculate discount if any
+      const discountCents = promo
+        ? Math.round((amountCents * promo.discount) / 100)
+        : 0;
+      const finalAmountCents = amountCents - discountCents;
+
+      // 1️⃣ Create Stripe Checkout Session
+      const checkoutSession = await stripe.checkout.sessions.create({
+        payment_method_types: ["card"],
+        mode: "payment",
+        line_items: [
+          {
+            price_data: {
+              currency,
+              product_data: {
+                name: "Raffle Bucks Top-up",
+              },
+              unit_amount: finalAmountCents,
+            },
+            quantity: 1,
+          },
+        ],
         metadata: {
           userId: userId.toString(),
           purpose: "BUCKS_TOPUP",
         },
+        success_url: `http://localhost:3000/user/bucks?session_id={CHECKOUT_SESSION_ID}`,
+        cancel_url: `http://localhost:3000/user/bucks?cancelled`,
       });
 
+      // 2️⃣ Save transaction
       const transaction = await TransactionModel.create(
         [
           {
@@ -715,14 +743,10 @@ export const transactionService = {
             amountCents,
             currency,
             promoCodeId: promo?._id || null,
-            discountCents: promo
-              ? Math.round((amountCents * promo.discount) / 100)
-              : 0,
-            finalAmountCents: amountCents,
-            stripe: {
-              paymentIntentId: paymentIntent.id,
-              clientSecret: paymentIntent.client_secret,
-            },
+            discountCents,
+            finalAmountCents,
+            stripeSessionId: checkoutSession.id,
+            stripePaymentIntentId: checkoutSession.payment_intent || null,
             status: "PENDING",
           },
         ],
@@ -733,8 +757,9 @@ export const transactionService = {
       session.endSession();
 
       return {
+       checkoutUrl: checkoutSession.url,
         transactionId: transaction[0]._id,
-        clientSecret: paymentIntent.client_secret,
+        stripeSessionId: checkoutSession.id,
       };
     } catch (err) {
       await session.abortTransaction();
@@ -742,7 +767,8 @@ export const transactionService = {
       throw err;
     }
   },
-  handleWebhook: async (payload: any, signature: string) => {
+
+  handleWebhook: async (payload: Buffer, signature: string) => {
     const session = await mongoose.startSession();
     session.startTransaction();
 
@@ -754,19 +780,19 @@ export const transactionService = {
       );
 
       switch (event.type) {
-        case "payment_intent.succeeded": {
-          const paymentIntent = event.data.object;
-
+        case "checkout.session.completed": {
+          const checkoutSession = event.data.object as Stripe.Checkout.Session;
           const transaction = await TransactionModel.findOne({
-            "stripe.paymentIntentId": paymentIntent.id,
+            stripeSessionId: checkoutSession.id,
           }).session(session);
 
           if (!transaction) throw new Error("Transaction not found");
-          if (transaction.status === "SUCCESS") return { success: true };
+          if (transaction.status === "SUCCESS") break;
 
           transaction.status = "SUCCESS";
           await transaction.save({ session });
 
+          // ✅ Add Bucks to user wallet
           await UserModel.updateOne(
             { _id: transaction.userId },
             {
@@ -778,6 +804,7 @@ export const transactionService = {
             { session }
           );
 
+          // ✅ Increment promo usage
           if (transaction.promoCodeId) {
             await PromoCodeModel.updateOne(
               { _id: transaction.promoCodeId },
@@ -786,39 +813,45 @@ export const transactionService = {
             );
           }
 
-          await session.commitTransaction();
-          session.endSession();
-          return { success: true };
+          break;
         }
 
-        case "payment_intent.payment_failed":
-        case "payment_intent.canceled": {
-          const failedIntent = event.data.object;
-
+        case "checkout.session.expired": {
+          const expiredSession = event.data.object as Stripe.Checkout.Session;
           await TransactionModel.updateOne(
-            { "stripe.paymentIntentId": failedIntent.id },
-            {
-              status:
-                event.type === "payment_intent.canceled"
-                  ? "CANCELED"
-                  : "FAILED",
-            },
+            { stripeSessionId: expiredSession.id },
+            { status: "EXPIRED" },
             { session }
           );
+          break;
+        }
 
-          await session.commitTransaction();
-          session.endSession();
-          return { success: true };
+        case "checkout.session.async_payment_failed": {
+          const failedSession = event.data.object as Stripe.Checkout.Session;
+          await TransactionModel.updateOne(
+            { stripeSessionId: failedSession.id },
+            { status: "FAILED" },
+            { session }
+          );
+          break;
+        }
+
+        case "checkout.session.async_payment_succeeded": {
+          // Stripe sometimes triggers async success events — handled above already
+          break;
         }
 
         default:
-          await session.commitTransaction();
-          session.endSession();
-          return { success: false, message: "Unhandled event type" };
+          console.log("Unhandled event type:", event.type);
       }
+
+      await session.commitTransaction();
+      session.endSession();
+      return { success: true };
     } catch (err) {
       await session.abortTransaction();
       session.endSession();
+      console.error("Webhook error:", err);
       throw err;
     }
   },

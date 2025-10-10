@@ -8,11 +8,9 @@ export interface ITransaction extends Document {
   promoCodeId?: mongoose.Types.ObjectId | null;
   discountCents?: number; 
   finalAmountCents: number; 
-  stripe: {
-    paymentIntentId: string;
-    clientSecret?: string;
-  };
-  status: "PENDING" | "SUCCESS" | "FAILED" | "CANCELED";
+  stripeSessionId: string; // ✅ main identifier from Stripe Checkout
+  stripePaymentIntentId?: string | null; // optional, for logs or refunds
+  status: "PENDING" | "SUCCESS" | "FAILED" | "CANCELED" | "EXPIRED"; 
   createdAt: Date;
   updatedAt: Date;
 }
@@ -52,19 +50,19 @@ const transactionSchema = new Schema<ITransaction>(
       type: Number,
       required: true,
     },
-    stripe: {
-      paymentIntentId: {
-        type: String,
-        required: true,
-        unique: true,
-      },
-      clientSecret: {
-        type: String,
-      },
+    stripeSessionId: {
+      type: String,
+      required: true,
+      unique: true,
+      index: true,
+    },
+    stripePaymentIntentId: {
+      type: String,
+      default: null,
     },
     status: {
       type: String,
-      enum: ["PENDING", "SUCCESS", "FAILED", "CANCELED"],
+      enum: ["PENDING", "SUCCESS", "FAILED", "CANCELED", "EXPIRED"],
       default: "PENDING",
       index: true,
     },
