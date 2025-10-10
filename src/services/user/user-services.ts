@@ -406,7 +406,11 @@ export const raffleServices = {
       const raffle = await RaffleModel.findById(raffleId).session(session);
       if (!raffle) throw new Error("Raffle not found");
 
-      if (raffle.status !== "INACTIVE" || raffle.isDeleted) {
+      if (
+        raffle.status === "ACTIVE" ||
+        raffle.status === "COMPLETED" ||
+        raffle.isDeleted
+      ) {
         throw new Error("Cannot withdraw from an active or completed raffle");
       }
 
@@ -712,13 +716,11 @@ export const transactionService = {
         if (checkPromoUsed) throw new Error("Promo code already Used");
       }
 
-      // Calculate discount if any
       const discountCents = promo
         ? Math.round((amountCents * promo.discount) / 100)
         : 0;
       const finalAmountCents = amountCents - discountCents;
 
-      // 1️⃣ Create Stripe Checkout Session
       const checkoutSession = await stripe.checkout.sessions.create({
         payment_method_types: ["card"],
         mode: "payment",
@@ -742,7 +744,6 @@ export const transactionService = {
         cancel_url: `http://localhost:3000/user/bucks?cancelled`,
       });
 
-      // 2️⃣ Save transaction
       const transaction = await TransactionModel.create(
         [
           {
