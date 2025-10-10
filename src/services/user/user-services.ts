@@ -793,12 +793,13 @@ export const transactionService = {
 
           transaction.status = "SUCCESS";
           await transaction.save({ session });
+  const bucksIncrement = Math.round((transaction.finalAmountCents / 100) * 100) / 100;
 
           const updatedUser = await UserModel.findByIdAndUpdate(
             transaction.userId,
             {
               $inc: {
-                raffleBucks: transaction.finalAmountCents / 100,
+                raffleBucks:bucksIncrement,
                 raffleBucksCents: transaction.finalAmountCents,
               },
             },
