@@ -21,7 +21,7 @@ export interface IUser extends Document {
   role: "USER" | "ADMIN";
   isVerifiedEmail: boolean;
   isVerifiedPhone: boolean;
-  pendingIsPhoneVerified:boolean;
+  pendingIsPhoneVerified: boolean;
   isDeleted: boolean;
   isBlocked?: boolean;
   lastLoginAt?: Date;
@@ -32,11 +32,10 @@ export interface IUser extends Document {
   isCardSetupComplete?: boolean;
   hasUsedTrial?: boolean;
   totalPoints?: number;
-  raffleBucks:number;
+  raffleBucks: number;
+  raffleBucksCents?: number;
   shippingAddresses?: IShippingAddress[];
 }
-
-
 
 const userSchema = new Schema<IUser>(
   {
@@ -44,7 +43,7 @@ const userSchema = new Schema<IUser>(
       type: String,
       required: true,
       trim: true,
-      unique:true,
+      unique: true,
     },
     email: {
       type: String,
@@ -89,7 +88,7 @@ const userSchema = new Schema<IUser>(
       type: Boolean,
       default: false,
     },
-     pendingIsPhoneVerified: {
+    pendingIsPhoneVerified: {
       type: Boolean,
       default: false,
     },
@@ -97,8 +96,8 @@ const userSchema = new Schema<IUser>(
       type: Boolean,
       default: false,
     },
-    isBlocked:{
-  type: Boolean,
+    isBlocked: {
+      type: Boolean,
       default: false,
     },
     lastLoginAt: {
@@ -130,9 +129,14 @@ const userSchema = new Schema<IUser>(
       type: Number,
       default: 0,
     },
-     raffleBucks: {
+    raffleBucks: {
       type: Number,
       default: 0,
+    },
+    raffleBucksCents: {
+      type: Number,
+      default: 0,
+      index: true,
     },
   },
   { timestamps: true }

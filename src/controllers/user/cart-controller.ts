@@ -74,20 +74,4 @@ export const getCartItems = async (req: Request, res: Response) => {
   }
 };
 
-export const applyPromoCode = async (req: Request, res: Response) => {
-  try {
-    const { reedemCode, cartTotal } = req.body;
-    const userData = req.user as any;
-    const response = await PromoServices.applyPromo({
-      reedemCode,
-      cartTotal,
-      userId: userData._id,
-    });
-    return OK(res, response || {});
-  } catch (err: any) {
-    if (err.message) {
-      return BADREQUEST(res, err.message);
-    }
-    return INTERNAL_SERVER_ERROR(res);
-  }
-};
+

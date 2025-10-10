@@ -16,8 +16,15 @@ import { UserRaffleModel } from "src/models/user/user-raffle-schema";
 
 export const profileSerivce = {
   getUser: async (payload: any) => {
-    const { userName, email, image, isVerifiedPhone, totalPoints, isBlocked } =
-      payload.userData;
+    const {
+      userName,
+      email,
+      image,
+      isVerifiedPhone,
+      totalPoints,
+      isBlocked,
+      raffleBucks,
+    } = payload.userData;
 
     const additionalInfo = await ShippingAddressModel.findOne({
       userId: payload.userData._id,
@@ -48,6 +55,7 @@ export const profileSerivce = {
       phoneNumber,
       isVerifiedPhone,
       isBlocked,
+      raffleBucks,
     };
   },
 
@@ -245,7 +253,8 @@ export const raffleServices = {
     const limitNumber = parseInt(limit, 10);
     const skip = (pageNumber - 1) * limitNumber;
     const filter: any = {
-      status: "ACTIVE",
+      status: { $in: ["ACTIVE", "INACTIVE"] },
+
       isDeleted: false,
     };
 
@@ -284,6 +293,168 @@ export const raffleServices = {
         totalPages: Math.ceil(totalRaffles / limitNumber),
       },
     };
+  },
+  buyRaffle: async (payload: any) => {
+    const session = await mongoose.startSession();
+    session.startTransaction();
+
+    try {
+      const { userId, raffleId } = payload;
+
+      const user = await UserModel.findById(userId).session(session);
+      if (!user) throw new Error("User not found");
+
+      const raffle = await RaffleModel.findOne({
+        _id: raffleId,
+        status: { $in: ["ACTIVE", "INACTIVE"] },
+        isDeleted: false,
+      }).session(session);
+
+      if (!raffle) throw new Error("Raffle not available");
+
+      const alreadyPurchased = await UserRaffleModel.findOne({
+        userId,
+        raffleId,
+        status: "ACTIVE",
+      }).session(session);
+
+      if (alreadyPurchased) {
+        throw new Error("You have already purchased this raffle");
+      }
+
+      const bucksRequiredCents = Math.round(raffle.price * 100);
+      const bucksRequired = bucksRequiredCents / 100;
+      if (user.raffleBucks < bucksRequired) {
+        throw new Error("Insufficient raffle bucks");
+      }
+
+      user.raffleBucks =
+        Math.round((user.raffleBucks - bucksRequired) * 100) / 100;
+      user.raffleBucksCents = Math.round(user.raffleBucks * 100);
+      await user.save({ session });
+
+      await RaffleModel.updateOne(
+        { _id: raffleId, bookedSlots: { $lt: raffle.totalSlots } },
+        { $inc: { bookedSlots: 1 } },
+        { session }
+      );
+
+      const order = await OrderModel.create(
+        [
+          {
+            userId,
+            transactionId: null,
+            raffleId,
+            slotsBooked: 1,
+            bucksSpent: bucksRequired,
+            status: "CONFIRMED",
+            raffleSnapshot: {
+              title: raffle.title,
+              price: bucksRequired,
+              totalSlots: raffle.totalSlots,
+            },
+          },
+        ],
+        { session }
+      );
+
+      await UserRaffleModel.updateOne(
+        { userId, raffleId },
+        {
+          userId,
+          raffleId,
+          orderId: order[0]._id,
+          slotNumber: 1,
+          status: "ACTIVE",
+          bucksSpent: bucksRequired,
+        },
+        { upsert: true, session }
+      );
+
+      const updatedRaffle =
+        await RaffleModel.findById(raffleId).session(session);
+      if (globalIo && updatedRaffle) {
+        globalIo.emit("raffle:update", {
+          raffleId: updatedRaffle._id,
+          bookedSlots: updatedRaffle.bookedSlots,
+        });
+      }
+
+      await session.commitTransaction();
+      session.endSession();
+
+      return {
+        success: true,
+        message: "Raffles purchased successfully",
+        totalBucksSpent: bucksRequired,
+        remainingBucks: user.raffleBucks,
+      };
+    } catch (err) {
+      await session.abortTransaction();
+      session.endSession();
+      throw err;
+    }
+  },
+  withdrawRaffle: async (payload: any) => {
+    const session = await mongoose.startSession();
+    session.startTransaction();
+
+    try {
+      const { userId, raffleId } = payload;
+
+      const raffle = await RaffleModel.findById(raffleId).session(session);
+      if (!raffle) throw new Error("Raffle not found");
+
+      if (raffle.status !== "INACTIVE" || raffle.isDeleted) {
+        throw new Error("Cannot withdraw from an active or completed raffle");
+      }
+
+      const userRaffle = await UserRaffleModel.findOne({
+        userId,
+        raffleId,
+      }).session(session);
+      if (!userRaffle) throw new Error("User has not joined this raffle");
+
+      const order = await OrderModel.findById(userRaffle.orderId).session(
+        session
+      );
+      if (!order) throw new Error("Order not found for this raffle");
+
+      const bucksToRefund = order.bucksSpent;
+      const user = await UserModel.findById(userId).session(session);
+      if (!user) throw new Error("User not found");
+
+      user.raffleBucks += bucksToRefund;
+      user.raffleBucksCents = Math.round(user.raffleBucks * 100);
+      await user.save({ session });
+
+      await OrderModel.deleteOne({ _id: order._id }).session(session);
+      await UserRaffleModel.deleteOne({ _id: userRaffle._id }).session(session);
+
+      raffle.bookedSlots = Math.max(raffle.bookedSlots - 1, 0);
+      await raffle.save({ session });
+
+      if (globalIo) {
+        globalIo.emit("raffle:update", {
+          raffleId: raffle._id,
+          bookedSlots: raffle.bookedSlots,
+        });
+      }
+
+      await session.commitTransaction();
+      session.endSession();
+
+      return {
+        success: true,
+        message: "Raffle withdrawn successfully and bucks refunded",
+        refundedBucks: bucksToRefund,
+        currentBucks: user.raffleBucks,
+      };
+    } catch (err) {
+      await session.abortTransaction();
+      session.endSession();
+      throw err;
+    }
   },
 };
 
@@ -420,16 +591,16 @@ export const cartServices = {
 
 export const PromoServices = {
   applyPromo: async (payload: any) => {
-    const { reedemCode, cartTotal, userId } = payload;
+    const { promoCode, cartTotal, userId } = payload;
 
-    if (!userId || !reedemCode || !cartTotal) {
+    if (!userId || !promoCode || !cartTotal) {
       throw new Error("UserId, promoCode, and cartTotal are required");
     }
     const user = await UserModel.findOne({ _id: userId, isDeleted: false });
     if (!user) throw new Error("User not found");
 
     const promo = await PromoCodeModel.findOne({
-      reedemCode: reedemCode,
+      reedemCode: promoCode,
       isDeleted: false,
     });
 
@@ -445,8 +616,9 @@ export const PromoServices = {
     ) {
       throw new Error("Promo not valid for this user");
     }
-    const discountAmount = (cartTotal * promo.discount) / 100;
-    const finalAmount = cartTotal - discountAmount;
+    const discountAmount =
+      Math.round(((cartTotal * promo.discount) / 100) * 100) / 100;
+    const finalAmount = Math.round((cartTotal - discountAmount) * 100) / 100;
     return {
       valid: true,
       promoCode: promo.reedemCode,
@@ -459,77 +631,49 @@ export const PromoServices = {
 
 export const transactionService = {
   createTransaction: async (payload: {
-    userId: string; 
-    raffleIds: string[];
-    amount: {
-      subtotal: number;
-      discount: number;
-      total: number;
-      currency: string;
-    };
-    promoCode?: string;
+    userId: string;
+    amount: number;
+    currency?: string;
+    promoCodeId?: string;
   }) => {
     const session = await mongoose.startSession();
     session.startTransaction();
 
     try {
-      const { userId, raffleIds, amount, promoCode } = payload;
+      const { userId, currency = "usd", amount, promoCodeId } = payload;
+      const amountCents = Math.round(amount * 100);
 
-      const alreadyPurchased = await UserRaffleModel.find({
-        userId,
-        raffleId: { $in: raffleIds },
-        status: { $in: ["ACTIVE", "CONFIRMED"] },
-      }).session(session);
-
-      if (alreadyPurchased.length > 0) {
-        const purchasedRaffles = alreadyPurchased.map((r) =>
-          r.raffleId.toString()
-        );
-        throw new Error(
-          `User has already purchased the following raffle(s): ${purchasedRaffles.join(", ")}`
-        );
-      }
-
-      let promoDetails = undefined;
-      let promoObjId = null;
-
-      if (promoCode) {
-        const promo = await PromoCodeModel.findOne({
-          reedemCode: promoCode,
-          isDeleted: false,
-        }).session(session);
-        if (!promo) throw new Error("Invalid promo code");
-        if (promo.expiryDate <= new Date())
-          throw new Error("Promo code expired");
-        if (promo.totalUses <= promo.promoUsed)
-          throw new Error("Promo code usage limit reached");
-
-        promoObjId = promo._id;
-        promoDetails = {
-          promoCode: promo.reedemCode,
-          discountValue: promo.discount,
-        };
+      let promo = null;
+      if (promoCodeId) {
+        promo = await PromoCodeModel.findById(promoCodeId).session(session);
+        if (!promo) throw new Error("Promo code not found");
       }
 
       const paymentIntent = await stripe.paymentIntents.create({
-        amount: Math.round(amount.total * 100),
-        currency: amount.currency,
+        amount: amountCents,
+        currency,
         metadata: {
           userId: userId.toString(),
-          raffleIds: raffleIds.map((id) => id.toString()).join(","),
+          purpose: "BUCKS_TOPUP",
         },
       });
 
-      // Create transaction in DB
       const transaction = await TransactionModel.create(
         [
           {
             userId,
-            raffleIds,
-            promoCode: promoObjId,
-            promoDetails,
-            amount,
-            stripe: { paymentIntentId: paymentIntent.id },
+            purpose: "BUCKS_TOPUP",
+            amountCents,
+            currency,
+            promoCodeId: promo?._id || null,
+            discountCents: promo
+              ? Math.round((amountCents * promo.discount) / 100)
+              : 0,
+            finalAmountCents: amountCents,
+            stripe: {
+              paymentIntentId: paymentIntent.id,
+              clientSecret: paymentIntent.client_secret,
+            },
             status: "PENDING",
           },
         ],
@@ -549,146 +693,123 @@ export const transactionService = {
       throw err;
     }
   },
+  handleWebhook: async (payload: any, signature: string) => {
+    const session = await mongoose.startSession();
+    session.startTransaction();
 
-  handleWebhook: async (event: any) => {
-  const session = await mongoose.startSession();
-  session.startTransaction();
+    try {
+      const event = stripe.webhooks.constructEvent(
+        payload,
+        signature,
+        process.env.STRIPE_WEBHOOK_SECRET!
+      );
 
-  try {
-    let transaction: any;
+      switch (event.type) {
+        case "payment_intent.succeeded": {
+          const paymentIntent = event.data.object;
 
-    switch (event.type) {
-      case "payment_intent.succeeded":
-        const paymentIntent = event.data.object;
+          const transaction = await TransactionModel.findOne({
+            "stripe.paymentIntentId": paymentIntent.id,
+          }).session(session);
 
-        transaction = await TransactionModel.findOne({
-          "stripe.paymentIntentId": paymentIntent.id,
-        }).session(session);
-        if (!transaction) throw new Error("Transaction not found");
+          if (!transaction) throw new Error("Transaction not found");
+          if (transaction.status === "SUCCESS") return { success: true };
 
-        // Prevent double processing
-        if (transaction.isProcessed) {
+          transaction.status = "SUCCESS";
+          await transaction.save({ session });
+
+          await UserModel.updateOne(
+            { _id: transaction.userId },
+            {
+              $inc: {
+                raffleBucks: transaction.finalAmountCents / 100,
+                raffleBucksCents: transaction.finalAmountCents,
+              },
+            },
+            { session }
+          );
+
+          if (transaction.promoCodeId) {
+            await PromoCodeModel.updateOne(
+              { _id: transaction.promoCodeId },
+              { $inc: { promoUsed: 1 } },
+              { session }
+            );
+          }
+
           await session.commitTransaction();
           session.endSession();
           return { success: true };
         }
 
-        // Mark transaction as SUCCESS
-        transaction.status = "SUCCESS";
-        transaction.isProcessed = true;
-        await transaction.save({ session });
+        case "payment_intent.payment_failed":
+        case "payment_intent.canceled": {
+          const failedIntent = event.data.object;
 
-        // Fetch all raffles
-        const raffles = await RaffleModel.find({
-          _id: { $in: transaction.raffleIds },
-        }).session(session);
-
-        if (!raffles || raffles.length === 0)
-          throw new Error("Raffles not found");
-
-        // Update bookedSlots atomically
-        const bulkRaffleOps = raffles.map((r) => ({
-          updateOne: {
-            filter: { _id: r._id, bookedSlots: { $lt: r.totalSlots } },
-            update: { $inc: { bookedSlots: 1 } },
-          },
-        }));
-        await RaffleModel.bulkWrite(bulkRaffleOps, { session });
-
-        // Create Orders in bulk if not exists
-        const ordersData = raffles.map((raffle) => ({
-          userId: transaction.userId,
-          transactionId: transaction._id,
-          raffleId: raffle._id,
-          slotsBooked: 1,
-          pointsSpent: raffle.price,
-          status: "CONFIRMED",
-          raffleSnapshot: {
-            title: raffle.title,
-            price: raffle.price,
-            totalSlots: raffle.totalSlots,
-          },
-        }));
-
-        await OrderModel.insertMany(ordersData, {
-          session,
-          ordered: false, // continue even if duplicates
-        });
-
-        // Create UserRaffles safely using upsert
-        const userRaffleOps = raffles.map((raffle) => ({
-          updateOne: {
-            filter: { userId: transaction.userId, raffleId: raffle._id },
-            update: {
-              userId: transaction.userId,
-              raffleId: raffle._id,
-              orderId: transaction._id,
-              slotNumber: 1,
-              status: "ACTIVE",
-              pointsSpent: 0,
+          await TransactionModel.updateOne(
+            { "stripe.paymentIntentId": failedIntent.id },
+            {
+              status:
+                event.type === "payment_intent.canceled"
+                  ? "CANCELED"
+                  : "FAILED",
             },
-            upsert: true,
-          },
-        }));
-
-        await UserRaffleModel.bulkWrite(userRaffleOps, { session });
-
-        // Update promo code usage
-        if (transaction.promoCode) {
-          await PromoCodeModel.updateOne(
-            { _id: transaction.promoCode },
-            { $inc: { promoUsed: 1 } },
             { session }
           );
+
+          await session.commitTransaction();
+          session.endSession();
+          return { success: true };
         }
 
-        // Clear user cart
-        await CartModel.deleteOne({ userId: transaction.userId }).session(
-          session
-        );
-
-        await session.commitTransaction();
-        session.endSession();
-
-        // Emit socket updates
-        if (globalIo) {
-          raffles.forEach((raffle) => {
-            globalIo.emit("raffle:update", {
-              raffleId: raffle._id,
-              bookedSlots: raffle.bookedSlots + 1,
-            });
-          });
-        }
-
-        break;
-
-      case "payment_intent.canceled":
-      case "payment_intent.payment_failed":
-        const failedIntent = event.data.object;
-        transaction = await TransactionModel.findOne({
-          "stripe.paymentIntentId": failedIntent.id,
-        }).session(session);
-        if (!transaction) throw new Error("Transaction not found");
-
-        transaction.status =
-          event.type === "payment_intent.canceled" ? "CANCELED" : "FAILED";
-        await transaction.save({ session });
-        break;
-
-      default:
-        console.log(`Unhandled event type ${event.type}`);
-        break;
+        default:
+          await session.commitTransaction();
+          session.endSession();
+          return { success: false, message: "Unhandled event type" };
+      }
+    } catch (err) {
+      await session.abortTransaction();
+      session.endSession();
+      throw err;
     }
+  },
+  getTransaction: async (payload: any) => {
+    const { userId, page, limit } = payload;
 
-    await session.commitTransaction();
-    session.endSession();
+    if (!userId) throw new Error("userId requried");
 
-    return { success: true };
-  } catch (err) {
-    await session.abortTransaction();
-    session.endSession();
-    throw err;
-  }
-}
+    const pageNumber = parseInt(page, 10);
+    const limitNumber = parseInt(limit, 10);
+    const skip = (pageNumber - 1) * limitNumber;
+    const filter: any = {
+      userId: userId,
+      status: { $in: ["SUCCESS","FAILED","CANCELED","PENDING"]},
+      purpose: "BUCKS_TOPUP",
+    };
+    const totalTransactions = await TransactionModel.countDocuments(filter);
+    const rawTransaction = await TransactionModel.find(filter)
+      .skip(skip)
+      .limit(limitNumber)
+      .populate("promoCodeId", "reedemCode promoType")
+      .select("stripe userId amountCents createdAt")
+      .sort({ createdAt: -1 });
 
+   const transc = rawTransaction.map((t: any) => {
+  const tx = t.toObject();
+  return {
+    ...tx,
+    amount: tx.amountCents / 100,
+    amountCents: undefined, 
+  };
+});
+    return {
+      data: transc,
+      pagination: {
+        total: totalTransactions,
+        page: pageNumber,
+        limit: limitNumber,
+        totalPages: Math.ceil(totalTransactions / limitNumber),
+      },
+    };
+  },
 };

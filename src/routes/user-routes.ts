@@ -1,8 +1,8 @@
 import { Router } from "express";
-import { addToCart, applyPromoCode, getCartItems, removeFromCart } from "src/controllers/user/cart-controller";
+import { addToCart, getCartItems, removeFromCart } from "src/controllers/user/cart-controller";
 import { getUser, initiatePhoneVerification, shippingDetails, updateUser, verifyPhoneNumber } from "src/controllers/user/profile-controller";
-import { createTransaction } from "src/controllers/user/transaction-controller";
-import { activeRaffles, getSingleRaffle } from "src/controllers/user/user-raffle-controller";
+import { applyPromoCode, createTransaction, getAllTransaction } from "src/controllers/user/transaction-controller";
+import { activeRaffles, buyRaffle, getSingleRaffle, withdrawRaffle } from "src/controllers/user/user-raffle-controller";
 
 // Code
 const router = Router();
@@ -19,6 +19,10 @@ router.get("/raffle/:id",getSingleRaffle)
 
 router.route("/cart").post(addToCart).get(getCartItems).put(removeFromCart)
 router.post("/apply-promo",applyPromoCode)
-router.post("/create-transaction", createTransaction);
+router.post("/buy-raffleBucks", createTransaction);
+router.post("/buy-raffle", buyRaffle);
+router.post("/withdraw-entry", withdrawRaffle);
+router.get("/transactions", getAllTransaction);
+
 
 export { router };

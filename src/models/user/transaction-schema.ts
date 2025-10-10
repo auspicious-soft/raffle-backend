@@ -1,97 +1,79 @@
 import mongoose, { Document, Schema } from "mongoose";
 
 export interface ITransaction extends Document {
-  userId: mongoose.Types.ObjectId;
-  raffleIds: mongoose.Types.ObjectId[];
-  promoCode?: mongoose.Types.ObjectId | null;
-  promoDetails?: {
-    code: string;
-    discountValue: number;
-  };
-  amount: {
-    subtotal: number;
-    discount: number;
-    total: number;
-    currency: string;
-  };
+ userId: mongoose.Types.ObjectId;
+  purpose: "BUCKS_TOPUP" | "OTHER";
+  amountCents: number; 
+  currency: string; 
+  promoCodeId?: mongoose.Types.ObjectId | null;
+  discountCents?: number; 
+  finalAmountCents: number; 
   stripe: {
     paymentIntentId: string;
-    checkoutSessionId?: string;
+    clientSecret?: string;
   };
   status: "PENDING" | "SUCCESS" | "FAILED" | "CANCELED";
   createdAt: Date;
-  isProcessed: boolean;
   updatedAt: Date;
 }
 
+
 const transactionSchema = new Schema<ITransaction>(
-  {
-    userId: { type: Schema.Types.ObjectId, ref: "user", required: true },
-    raffleIds: [
-      {
-        type: Schema.Types.ObjectId,
-        ref: "raffles",
-        required: true,
-      },
-    ],
-    promoCode: {
+ {
+    userId: {
+      type: Schema.Types.ObjectId,
+      ref: "user",
+      required: true,
+      index: true,
+    },
+    purpose: {
+      type: String,
+      enum: ["BUCKS_TOPUP", "OTHER"],
+      default: "BUCKS_TOPUP",
+    },
+    amountCents: {
+      type: Number,
+      required: true, 
+    },
+    currency: {
+      type: String,
+      default: "usd",
+    },
+    promoCodeId: {
       type: Schema.Types.ObjectId,
       ref: "promoCodes",
       default: null,
     },
-    promoDetails: {
-      code: {
-        type: String,
-        default: "",
-      },
-      discountValue: {
-        type: Number,
-        default: 0,
-      },
+    discountCents: {
+      type: Number,
+      default: 0,
     },
-    amount: {
-      subtotal: {
-        type: Number,
-        required: true,
-      },
-      discount: {
-        type: Number,
-        default: 0,
-      },
-      total: {
-        type: Number,
-        required: true,
-      },
-      currency: {
-        type: String,
-        default: "usd",
-      },
-    },
-    isProcessed: {
-      type: Boolean,
-      default: false,
+    finalAmountCents: {
+      type: Number,
+      required: true,
     },
     stripe: {
       paymentIntentId: {
         type: String,
         required: true,
+        unique: true,
       },
-      checkoutSessionId: {
+      clientSecret: {
         type: String,
-        default: null,
       },
     },
     status: {
       type: String,
       enum: ["PENDING", "SUCCESS", "FAILED", "CANCELED"],
       default: "PENDING",
+      index: true,
     },
   },
   { timestamps: true }
 );
 
-transactionSchema.index({ userId: 1, status: 1 });
 transactionSchema.index({ "stripe.paymentIntentId": 1 }, { unique: true });
+transactionSchema.index({ userId: 1, status: 1 });
 
 export const TransactionModel = mongoose.model<ITransaction>(
   "transactions",
