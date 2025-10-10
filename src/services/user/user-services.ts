@@ -704,6 +704,12 @@ export const transactionService = {
           reedemCode: promoCodeId,
         }).session(session);
         if (!promo) throw new Error("Promo code not found");
+
+        const checkPromoUsed = await TransactionModel.findOne({
+          userId: userId,
+          promoCodeId: promo._id,
+        });
+        if (checkPromoUsed) throw new Error("Promo code already Used");
       }
 
       // Calculate discount if any
@@ -793,14 +799,15 @@ export const transactionService = {
 
           transaction.status = "SUCCESS";
           await transaction.save({ session });
-  const bucksIncrement = Math.round((transaction.finalAmountCents / 100) * 100) / 100;
+          const bucksIncrement =
+            Math.round((transaction.amountCents / 100) * 100) / 100;
 
           const updatedUser = await UserModel.findByIdAndUpdate(
             transaction.userId,
             {
               $inc: {
-                raffleBucks:bucksIncrement,
-                raffleBucksCents: transaction.finalAmountCents,
+                raffleBucks: bucksIncrement,
+                raffleBucksCents: transaction.amountCents,
               },
             },
             { new: true, session }
@@ -871,7 +878,7 @@ export const transactionService = {
     const skip = (pageNumber - 1) * limitNumber;
     const filter: any = {
       userId: userId,
-      status: { $in: ["SUCCESS", "FAILED", ] },
+      status: { $in: ["SUCCESS", "FAILED"] },
       purpose: "BUCKS_TOPUP",
     };
     const totalTransactions = await TransactionModel.countDocuments(filter);
@@ -879,14 +886,14 @@ export const transactionService = {
       .skip(skip)
       .limit(limitNumber)
       .populate("promoCodeId", "reedemCode promoType")
-      .select("stripeSessionId userId amountCents createdAt status")
+      .select("stripeSessionId userId finalAmountCents createdAt status")
       .sort({ createdAt: -1 });
 
     const transc = rawTransaction.map((t: any) => {
       const tx = t.toObject();
       return {
         ...tx,
-        amount: tx.amountCents / 100,
+        amount: tx.finalAmountCents / 100,
         amountCents: undefined,
       };
     });
