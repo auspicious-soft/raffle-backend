@@ -9,7 +9,6 @@ export interface ITransaction extends Document {
   discountCents?: number; 
   finalAmountCents: number; 
   stripeSessionId: string;
-  stripePaymentIntentId?: string | null; 
   status: "PENDING" | "SUCCESS" | "FAILED" | "CANCELED" | "EXPIRED"; 
   createdAt: Date;
   updatedAt: Date;
@@ -55,10 +54,6 @@ const transactionSchema = new Schema<ITransaction>(
       required: true,
       unique: true,
       index: true,
-    },
-    stripePaymentIntentId: {
-      type: String,
-      default: null,
     },
     status: {
       type: String,
