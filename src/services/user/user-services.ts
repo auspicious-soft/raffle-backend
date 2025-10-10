@@ -778,12 +778,20 @@ export const transactionService = {
 
     if (!userId) throw new Error("userId requried");
 
+    const user = await UserModel.findOne({
+      _id: userId,
+      isDeleted: false,
+    });
+    if (!user) {
+      throw new Error(" User not found ");
+    }
+    const raffleBucks = user.raffleBucks;
     const pageNumber = parseInt(page, 10);
     const limitNumber = parseInt(limit, 10);
     const skip = (pageNumber - 1) * limitNumber;
     const filter: any = {
       userId: userId,
-      status: { $in: ["SUCCESS","FAILED","CANCELED","PENDING"]},
+      status: { $in: ["SUCCESS", "FAILED", "CANCELED", "PENDING"] },
       purpose: "BUCKS_TOPUP",
     };
     const totalTransactions = await TransactionModel.countDocuments(filter);
@@ -794,15 +802,16 @@ export const transactionService = {
       .select("stripe userId amountCents createdAt")
       .sort({ createdAt: -1 });
 
-   const transc = rawTransaction.map((t: any) => {
-  const tx = t.toObject();
-  return {
-    ...tx,
-    amount: tx.amountCents / 100,
-    amountCents: undefined, 
-  };
-});
+    const transc = rawTransaction.map((t: any) => {
+      const tx = t.toObject();
+      return {
+        ...tx,
+        amount: tx.amountCents / 100,
+        amountCents: undefined,
+      };
+    });
     return {
+      raffleBucks: raffleBucks,
       data: transc,
       pagination: {
         total: totalTransactions,
