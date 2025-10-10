@@ -8,8 +8,8 @@ export interface ITransaction extends Document {
   promoCodeId?: mongoose.Types.ObjectId | null;
   discountCents?: number; 
   finalAmountCents: number; 
-  stripeSessionId: string; // ✅ main identifier from Stripe Checkout
-  stripePaymentIntentId?: string | null; // optional, for logs or refunds
+  stripeSessionId: string;
+  stripePaymentIntentId?: string | null; 
   status: "PENDING" | "SUCCESS" | "FAILED" | "CANCELED" | "EXPIRED"; 
   createdAt: Date;
   updatedAt: Date;

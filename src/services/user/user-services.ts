@@ -692,7 +692,7 @@ export const transactionService = {
     try {
       const { userId, currency = "usd", amount, promoCodeId } = payload;
 
-       if (!amount || amount <= 0) {
+      if (!amount || amount <= 0) {
         throw new Error("Amount must be greater than 0");
       }
 
@@ -700,7 +700,9 @@ export const transactionService = {
 
       let promo = null;
       if (promoCodeId) {
-        promo = await PromoCodeModel.findById(promoCodeId).session(session);
+        promo = await PromoCodeModel.findOne({
+          reedemCode: promoCodeId,
+        }).session(session);
         if (!promo) throw new Error("Promo code not found");
       }
 
@@ -757,7 +759,7 @@ export const transactionService = {
       session.endSession();
 
       return {
-       checkoutUrl: checkoutSession.url,
+        checkoutUrl: checkoutSession.url,
         transactionId: transaction[0]._id,
         stripeSessionId: checkoutSession.id,
       };
@@ -792,19 +794,19 @@ export const transactionService = {
           transaction.status = "SUCCESS";
           await transaction.save({ session });
 
-          // ✅ Add Bucks to user wallet
-          await UserModel.updateOne(
-            { _id: transaction.userId },
+          const updatedUser = await UserModel.findByIdAndUpdate(
+            transaction.userId,
             {
               $inc: {
                 raffleBucks: transaction.finalAmountCents / 100,
                 raffleBucksCents: transaction.finalAmountCents,
               },
             },
-            { session }
+            { new: true, session }
           );
 
-          // ✅ Increment promo usage
+          if (!updatedUser) throw new Error("User not found");
+
           if (transaction.promoCodeId) {
             await PromoCodeModel.updateOne(
               { _id: transaction.promoCodeId },
@@ -833,11 +835,6 @@ export const transactionService = {
             { status: "FAILED" },
             { session }
           );
-          break;
-        }
-
-        case "checkout.session.async_payment_succeeded": {
-          // Stripe sometimes triggers async success events — handled above already
           break;
         }
 
