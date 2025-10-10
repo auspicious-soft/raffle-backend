@@ -755,7 +755,6 @@ export const transactionService = {
             discountCents,
             finalAmountCents,
             stripeSessionId: checkoutSession.id,
-            stripePaymentIntentId: checkoutSession.payment_intent || null,
             status: "PENDING",
           },
         ],
