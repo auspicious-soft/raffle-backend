@@ -870,7 +870,7 @@ export const transactionService = {
     const skip = (pageNumber - 1) * limitNumber;
     const filter: any = {
       userId: userId,
-      status: { $in: ["SUCCESS", "FAILED", "CANCELED", "PENDING"] },
+      status: { $in: ["SUCCESS", "FAILED", ] },
       purpose: "BUCKS_TOPUP",
     };
     const totalTransactions = await TransactionModel.countDocuments(filter);
@@ -878,7 +878,7 @@ export const transactionService = {
       .skip(skip)
       .limit(limitNumber)
       .populate("promoCodeId", "reedemCode promoType")
-      .select("stripe userId amountCents createdAt")
+      .select("stripeSessionId userId amountCents createdAt status")
       .sort({ createdAt: -1 });
 
     const transc = rawTransaction.map((t: any) => {
