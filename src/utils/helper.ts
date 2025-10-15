@@ -6,6 +6,8 @@ import { configDotenv } from "dotenv";
 import SignupVerification from "./email-templates/signup-verification";
 import ForgotPasswordVerification from "./email-templates/forget-password-verification";
 import { customMessages, SupportedLang } from "./messages";
+import RedeemRewardEmail from "./email-templates/reedem-reward"
+
 import { IUser } from "src/models/user/user-schema";
 import jwt from "jsonwebtoken";
 import { TokenModel } from "src/models/user/token-schema";
@@ -13,6 +15,7 @@ import axios from "axios";
 // import jwkToPem from "jwk-to-pem";
 import fs from "fs";
 import { DateTime } from "luxon";
+import React from "react";
 
 configDotenv();
 const resend = new Resend(process.env.RESEND_API_KEY);
@@ -145,4 +148,32 @@ export function convertToUTC(date: string, hour: number, tz: string) {
   })
     .toUTC()
     .toJSDate();
+}
+
+export async function sendRedeemRewardEmail({
+  to,
+  redemptionCode,
+  expiryDate,
+  price,
+  companyName,
+}: {
+  to: string;
+  redemptionCode: string;
+  expiryDate: string | Date;
+  price?: number;
+  companyName?: string;
+}) {
+  const email = React.createElement(RedeemRewardEmail, {
+    redemptionCode,
+    expiryDate,
+    price,
+    companyName,
+  });
+
+  await resend.emails.send({
+    from: process.env.COMPANY_RESEND_GMAIL_ACCOUNT as string,
+    to,
+    subject: "Your Reward Gift Card is Ready!",
+    react: email, // ✅ this is a ReactNode, not a Promise
+  });
 }

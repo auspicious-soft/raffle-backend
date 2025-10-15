@@ -20,6 +20,7 @@ import {
   getAllRaffles,
   getRaffleById,
   updateRaffle,
+  uploadRewardImages,
 } from "src/controllers/admin/raffle-controller";
 import { createRedemptionLadder, deleteLadder, getAllLadders, getSingleLadder, updateLadder } from "src/controllers/admin/redemption-ladder-controller";
 import {
@@ -50,6 +51,7 @@ router
   .get(getAllRaffles)
   .patch(updateRaffle);
 router.route("/raffle/:id").get(getRaffleById).delete(deleteRaffle);
+router.post("/upload-images", uploadRewardImages);
 
 
 // User API's

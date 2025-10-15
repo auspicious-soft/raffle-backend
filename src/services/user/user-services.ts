@@ -9,11 +9,13 @@ import { CartQueueModel } from "src/models/user/cart_queue-schema";
 import { TransactionModel } from "src/models/user/transaction-schema";
 import { UserModel } from "src/models/user/user-schema";
 import { ShippingAddressModel } from "src/models/user/user-shipping-schema";
-import { generateAndSendOtp } from "src/utils/helper";
+import { generateAndSendOtp, sendRedeemRewardEmail } from "src/utils/helper";
 import { io as globalIo } from "../../../src/app";
 import { OrderModel } from "src/models/user/order-schema";
 import { UserRaffleModel } from "src/models/user/user-raffle-schema";
 import Stripe from "stripe";
+import { RedemptionModel } from "src/models/admin/redemption-ladder-schema";
+import { GiftCardModel } from "src/models/admin/gift-card-schema";
 
 export const profileSerivce = {
   getUser: async (payload: any) => {
@@ -467,13 +469,13 @@ export const raffleServices = {
     const limitNumber = parseInt(limit, 10);
     const skip = (pageNumber - 1) * limitNumber;
 
-    const filter = { userId, status: "ACTIVE" }; // Only active purchased raffles
+    const filter = { userId, status: "ACTIVE" };
 
     const totalRaffles = await UserRaffleModel.countDocuments(filter);
     const rawRaffles = await UserRaffleModel.find(filter)
       .skip(skip)
       .limit(limitNumber)
-      .populate("raffleId") // fetch raffle details
+      .populate("raffleId")
       .sort({ createdAt: -1 });
 
     const raffles = rawRaffles.map((ur: any) => {
@@ -485,17 +487,17 @@ export const raffleServices = {
         rewards: raffle.rewards.map((r: any) => ({
           rewardName: r.rewardName,
           rewardType: r.rewardType,
-          rewardImages: r.rewardImages,
-          giftCard: r.giftCard,
+          // rewardImages: r.rewardImages,
+          // giftCard: r.giftCard,
           consolationPoints: r.consolationPoints,
-          promoCode: r.promoCode,
+          // promoCode: r.promoCode,
           rewardStatus: r.rewardStatus,
         })),
         startDate: raffle.startDate,
         endDate: raffle.endDate,
         status: raffle.status,
-        slotsBooked: ur.slotNumber || 1,
-        bucksSpent: ur.bucksSpent,
+        // slotsBooked: ur.slotNumber || 1,
+        // bucksSpent: ur.bucksSpent,
         purchasedAt: ur.createdAt,
       };
     });
@@ -906,6 +908,118 @@ export const transactionService = {
         limit: limitNumber,
         totalPages: Math.ceil(totalTransactions / limitNumber),
       },
+    };
+  },
+};
+
+export const ladderServices = {
+  getLadder: async (payload: any) => {
+    const { userId } = payload;
+
+    const user = await UserModel.findOne({
+      _id: userId,
+      isDeleted: false,
+    });
+    if (!user) {
+      throw new Error("User not found.");
+    }
+    const reedemPoints = user.totalPoints || 0;
+    const totalCount = await RedemptionModel.countDocuments();
+    const ladders = await RedemptionModel.find({ isDeleted: false })
+      .select("-__v -createdAt -updatedAt -categories")
+      .sort({ requiredPoints: 1 })
+      .lean();
+    return { totalPoints: reedemPoints, totalLadders: totalCount, ladders };
+  },
+  getLadderCategories: async (payload: any) => {
+    const { userId, points } = payload;
+
+    const user = await UserModel.findOne({
+      _id: userId,
+      isDeleted: false,
+    });
+    if (!user) {
+      throw new Error("User not found.");
+    }
+    const reedemPoints = user.totalPoints || 0;
+
+    const ladder = await RedemptionModel.findOne({
+      requiredPoints: Number(points),
+      isDeleted: false,
+    })
+      .populate({
+        path: "categories",
+        select: "companyName price _id",
+      })
+      .select("categories requiredPoints")
+      .lean();
+
+    if (!ladder) {
+      throw new Error("No Categories found for this requiredPoints.");
+    }
+
+    let canReedem = false;
+    if (ladder.requiredPoints < reedemPoints) {
+      canReedem = true;
+    }
+
+    return { reedemPoints, canReedem, ladder };
+  },
+  reedemReward: async (payload: any) => {
+    const { userId, userName, userEmail, categoryId, ladderId } = payload;
+
+    if (!categoryId) {
+      throw new Error("Category id is requried");
+    }
+
+    const user = await UserModel.findOne({
+      _id: userId,
+      isDeleted: false,
+    });
+    if (!user) {
+      throw new Error("User not Found.");
+    }
+    const ladder = await RedemptionModel.findOne({
+      _id: ladderId,
+      isDeleted: false,
+    }).populate("categories", "_id");
+    if (!ladder) throw new Error("Ladder not found");
+
+    const categoryExists = ladder.categories.some(
+      (cat: any) => cat._id.toString() === categoryId.toString()
+    );
+    if (!categoryExists)
+      throw new Error("Category does not belong to this ladder");
+
+    if ((user.totalPoints || 0) < ladder.requiredPoints) {
+      throw new Error("Insufficient points to redeem this reward");
+    }
+    const giftCard = await GiftCardModel.findOneAndUpdate(
+      {
+        categoryId,
+        status: "NOT_GRANTED",
+        expiryDate: { $gte: new Date() },
+      },
+      { $set: { status: "GRANTED" } },
+      { new: true }
+    );
+
+    if (!giftCard) throw new Error("No available gift cards in this category");
+
+    user.totalPoints = (user.totalPoints || 0) - ladder.requiredPoints;
+    await user.save();
+
+    await sendRedeemRewardEmail({
+      to: userEmail,
+      redemptionCode: giftCard.redemptionCode,
+      expiryDate: giftCard.expiryDate,
+      price: giftCard.price,
+    });
+    return {
+      message: "Reward redeemed successfully",
+      redemptionCode: giftCard.redemptionCode,
+      expiryDate: giftCard.expiryDate,
+      remainingPoints: user.totalPoints,
     };
   },
 };

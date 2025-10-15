@@ -1,4 +1,6 @@
 import { Request, response, Response } from "express";
+import { uploadImages } from "src/config/multer";
+import { uploadFileToS3 } from "src/config/s3";
 import { RaffleServices } from "src/services/admin/admin-services";
 import {
   BADREQUEST,
@@ -140,4 +142,36 @@ export const updateRaffle = async (req: Request, res: Response) => {
     }
     return INTERNAL_SERVER_ERROR(res);
   }
+};
+
+export const uploadRewardImages = (req: Request, res: Response) => {
+  uploadImages.array("images", 10)(req, res, async (err: any) => {
+    if (err) {
+      return BADREQUEST(res, err.message || "Error uploading files");
+    }
+
+    try {
+      const files = req.files as Express.Multer.File[];
+      if (!files || files.length === 0) {
+        return BADREQUEST(res, "No files provided");
+      }
+      const uploadedFiles = await Promise.all(
+        files.map(async (file) => {
+          const { key } = await uploadFileToS3(
+            file.buffer,
+            file.originalname,
+            file.mimetype,
+            req.user._id.toString(),
+            "reward"
+          );
+
+          return `https://${process.env.AWS_BUCKET_NAME}.s3.${process.env.AWS_REGION}.amazonaws.com/${key}`;
+        })
+      );
+      return OK(res, { urls: uploadedFiles });
+    } catch (error: any) {
+      console.error("S3 Upload Error:", error);
+      return INTERNAL_SERVER_ERROR(res, "Failed to upload files");
+    }
+  });
 };
