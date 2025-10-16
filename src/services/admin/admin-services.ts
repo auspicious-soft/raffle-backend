@@ -5,6 +5,7 @@ import { GiftCategoryModel } from "src/models/admin/gift-category-schema";
 import { PromoCodeModel } from "src/models/admin/promo-code-schema";
 import { RaffleModel } from "src/models/admin/raffle-schema";
 import { RedemptionModel } from "src/models/admin/redemption-ladder-schema";
+import { UserRedemptionModel } from "src/models/user/user-redemptionHistory-schema";
 import { UserModel } from "src/models/user/user-schema";
 import { ShippingAddressModel } from "src/models/user/user-shipping-schema";
 import { Readable } from "stream";
@@ -240,11 +241,11 @@ export const PromoCodeServices = {
       throw new Error("requriedPromoFields");
     }
     const checkName = await PromoCodeModel.findOne({
-      reedemCode:reedemCode,
-      isDeleted:false
-    })
-    if(checkName){
-      throw new Error ("Promo with this code already exist.")
+      reedemCode: reedemCode,
+      isDeleted: false,
+    });
+    if (checkName) {
+      throw new Error("Promo with this code already exist.");
     }
     let userName = "";
     let userId: any;
@@ -383,7 +384,7 @@ export const RaffleServices = {
         rewardImages,
       } = reward;
 
-      if (!rewardName || !consolationPoints ||  !rewardType) {
+      if (!rewardName || !consolationPoints || !rewardType) {
         throw new Error(
           "rewardName, consolationPoints, RewardType is Required"
         );
@@ -434,7 +435,7 @@ export const RaffleServices = {
       price,
       totalSlots,
       bookedSlots: 0,
-      winnerId:winnerId || null,
+      winnerId: winnerId || null,
       startDate: new Date(startDate),
       endDate: new Date(endDate),
       rewards: formattedRewards,
@@ -461,7 +462,7 @@ export const RaffleServices = {
     const pageNumber = parseInt(page, 10);
     const limitNumber = parseInt(limit, 10);
     const skip = (pageNumber - 1) * limitNumber;
-    const filter: any = {isDeleted:false};
+    const filter: any = { isDeleted: false };
     if (search) {
       filter.title = { $regex: search, $options: "i" };
     }
@@ -579,79 +580,79 @@ export const RaffleServices = {
       updateData.status = status;
     }
 
-if (rewards && Array.isArray(rewards) && rewards.length > 0) {
-  const existingRewards = raffle.rewards.map(r => r.toObject?.() || r); 
-  const updatedRewards: any[] = [];
+    if (rewards && Array.isArray(rewards) && rewards.length > 0) {
+      const existingRewards = raffle.rewards.map((r) => r.toObject?.() || r);
+      const updatedRewards: any[] = [];
 
-  for (let i = 0; i < rewards.length; i++) {
-    const incoming = rewards[i];
-    const current = existingRewards[i] || {}; 
-    const {
-      rewardName,
-      rewardType,
-      giftCard,
-      consolationPoints,
-      promoCode,
-      rewardImages,
-      rewardStatus,
-    } = incoming;
+      for (let i = 0; i < rewards.length; i++) {
+        const incoming = rewards[i];
+        const current = existingRewards[i] || {};
+        const {
+          rewardName,
+          rewardType,
+          giftCard,
+          consolationPoints,
+          promoCode,
+          rewardImages,
+          rewardStatus,
+        } = incoming;
 
-    if ("rewardName" in incoming && !rewardName) {
-      throw new Error("rewardName cannot be empty");
-    }
-    if ("consolationPoints" in incoming && !consolationPoints) {
-      throw new Error("consolationPoints cannot be empty");
-    }
-    if ("promoCode" in incoming && !promoCode) {
-      throw new Error("promoCode cannot be empty");
-    }
-    if ("rewardType" in incoming && !rewardType) {
-      throw new Error("rewardType cannot be empty");
-    }
-    if (rewardType === "PHYSICAL" && giftCard) {
-      throw new Error("Physical reward cannot have a giftCard");
-    }
-    if (rewardType === "DIGITAL" && !giftCard) {
-      throw new Error("GiftCard is required for Digital reward");
-    }
+        if ("rewardName" in incoming && !rewardName) {
+          throw new Error("rewardName cannot be empty");
+        }
+        if ("consolationPoints" in incoming && !consolationPoints) {
+          throw new Error("consolationPoints cannot be empty");
+        }
+        if ("promoCode" in incoming && !promoCode) {
+          throw new Error("promoCode cannot be empty");
+        }
+        if ("rewardType" in incoming && !rewardType) {
+          throw new Error("rewardType cannot be empty");
+        }
+        if (rewardType === "PHYSICAL" && giftCard) {
+          throw new Error("Physical reward cannot have a giftCard");
+        }
+        if (rewardType === "DIGITAL" && !giftCard) {
+          throw new Error("GiftCard is required for Digital reward");
+        }
 
-    if (giftCard) {
-      const checkGiftExist = await GiftCategoryModel.findOne({
-        _id: giftCard,
-        isDeleted: false,
-      });
-      if (!checkGiftExist)
-        throw new Error("Gift Category not found or invalid");
-    }
+        if (giftCard) {
+          const checkGiftExist = await GiftCategoryModel.findOne({
+            _id: giftCard,
+            isDeleted: false,
+          });
+          if (!checkGiftExist)
+            throw new Error("Gift Category not found or invalid");
+        }
 
-    if (promoCode) {
-      const checkPromo = await PromoCodeModel.findOne({
-        _id: promoCode,
-        isDeleted: false,
-        status: "AVAILABLE",
-      });
-      if (!checkPromo) throw new Error("Promo Code not found or invalid");
+        if (promoCode) {
+          const checkPromo = await PromoCodeModel.findOne({
+            _id: promoCode,
+            isDeleted: false,
+            status: "AVAILABLE",
+          });
+          if (!checkPromo) throw new Error("Promo Code not found or invalid");
+        }
+        updatedRewards.push({
+          rewardName: rewardName ?? current.rewardName,
+          rewardType: rewardType ?? current.rewardType,
+          giftCard: giftCard !== undefined ? giftCard : current.giftCard,
+          consolationPoints:
+            consolationPoints !== undefined
+              ? consolationPoints
+              : current.consolationPoints,
+          promoCode: promoCode !== undefined ? promoCode : current.promoCode,
+          rewardStatus: rewardStatus ?? current.rewardStatus,
+          rewardImages:
+            rewardImages !== undefined
+              ? Array.isArray(rewardImages)
+                ? rewardImages
+                : current.rewardImages
+              : current.rewardImages,
+        });
+      }
+      updateData.rewards = updatedRewards;
     }
-    updatedRewards.push({
-      rewardName: rewardName ?? current.rewardName,
-      rewardType: rewardType ?? current.rewardType,
-      giftCard: giftCard !== undefined ? giftCard : current.giftCard,
-      consolationPoints:
-        consolationPoints !== undefined
-          ? consolationPoints
-          : current.consolationPoints,
-      promoCode: promoCode !== undefined ? promoCode : current.promoCode,
-      rewardStatus: rewardStatus ?? current.rewardStatus,
-      rewardImages:
-        rewardImages !== undefined
-          ? Array.isArray(rewardImages)
-            ? rewardImages
-            : current.rewardImages
-          : current.rewardImages,
-    });
-  }
-  updateData.rewards = updatedRewards;
-}
 
     const updatedRaffle = await RaffleModel.findByIdAndUpdate(
       raffleId,
@@ -948,5 +949,51 @@ export const RedempLadder = {
     ).lean();
 
     return updatedLadder;
+  },
+  redemptionHistory: async (payload: any) => {
+    const { categoryId, page, limit } = payload;
+
+    const pageNumber = parseInt(page, 10) || 1;
+    const limitNumber = parseInt(limit, 10) || 10;
+    const skip = (pageNumber - 1) * limitNumber;
+
+    const filter: any = {};
+    if (categoryId) {
+      const category = await GiftCategoryModel.findOne({
+        _id: categoryId,
+        isDeleted: false,
+      }).lean();
+
+      if (!category) {
+        throw new Error("Category not found.");
+      }
+      filter.categoryId = categoryId;
+    }
+
+    const totalRedemption = await UserRedemptionModel.countDocuments(filter);
+    const rawRedempHistory = await UserRedemptionModel.find(filter)
+      .skip(skip)
+      .limit(limitNumber)
+      .sort({ createdAt: -1 })
+      .select("_id userId pointsUsed expiryDate redeemedAt")
+      .populate("userId", "userName")
+      .lean();
+
+    const history = rawRedempHistory.map((hist: any) => ({
+      _id: hist._id,
+      userName: hist.userId?.userName || "Unknown User",
+      pointsUsed: hist.pointsUsed,
+      expiryDate: hist.expiryDate,
+      redeemedAt: hist.redeemedAt,
+    }));
+    return {
+      history,
+      pagination: {
+        total: totalRedemption,
+        page: pageNumber,
+        limit: limitNumber,
+        totalPages: Math.ceil(totalRedemption / limitNumber),
+      },
+    };
   },
 };

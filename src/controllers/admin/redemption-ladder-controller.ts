@@ -79,13 +79,30 @@ export const updateLadder = async (req: Request, res: Response) => {
     if (!ladderId) {
       throw new Error("Ladder id is requried");
     }
-    const reponse = await RedempLadder.updateLadder({
+    const response = await RedempLadder.updateLadder({
       ladderId,
       name,
       requiredPoints,
       categories,
     });
-    return OK(res, reponse);
+    return OK(res, response);
+  } catch (err: any) {
+    if (err.message) return BADREQUEST(res, err.message);
+    return INTERNAL_SERVER_ERROR(res);
+  }
+};
+
+
+export const userRedemptionHistoy = async(req:Request, res:Response) =>{
+  try {
+    const {id:categoryId, page, limit} = req.query;
+
+    const response = await RedempLadder.redemptionHistory({
+      categoryId,
+      page,
+      limit,
+    });
+ return OK(res, response);
   } catch (err: any) {
     if (err.message) return BADREQUEST(res, err.message);
     return INTERNAL_SERVER_ERROR(res);
