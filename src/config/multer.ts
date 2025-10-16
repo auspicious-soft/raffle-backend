@@ -21,5 +21,5 @@ export const uploadImages = multer({
     if (allowed.includes(file.mimetype)) cb(null, true);
     else cb(new Error("Only image files are allowed"));
   },
-  limits: { fileSize: 10 * 1024 * 1024 },
+  limits: { fileSize: 25 * 1024 * 1024 },
 });

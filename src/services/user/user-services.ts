@@ -16,6 +16,7 @@ import { UserRaffleModel } from "src/models/user/user-raffle-schema";
 import Stripe from "stripe";
 import { RedemptionModel } from "src/models/admin/redemption-ladder-schema";
 import { GiftCardModel } from "src/models/admin/gift-card-schema";
+import { UserRedemptionModel } from "src/models/user/user-redemptionHistory-schema";
 
 export const profileSerivce = {
   getUser: async (payload: any) => {
@@ -1008,6 +1009,17 @@ export const ladderServices = {
 
     user.totalPoints = (user.totalPoints || 0) - ladder.requiredPoints;
     await user.save();
+
+     await UserRedemptionModel.create({
+      userId: user._id,
+      ladderId: ladder._id,
+      categoryId,
+      giftCardId: giftCard._id,
+      redemptionCode: giftCard.redemptionCode,
+      pointsUsed: ladder.requiredPoints,
+      expiryDate: giftCard.expiryDate,
+      status: "GRANTED",
+    });
 
     await sendRedeemRewardEmail({
       to: userEmail,
