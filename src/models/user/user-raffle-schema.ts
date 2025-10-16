@@ -9,6 +9,7 @@ export interface IUserRaffle extends Document {
   bucksSpent: number;
   createdAt: Date;
   updatedAt: Date;
+  result: "WIN" | "LOSS" | "TBD";
 }
 
 const userRaffleSchema = new Schema<IUserRaffle>(
@@ -36,6 +37,11 @@ const userRaffleSchema = new Schema<IUserRaffle>(
       type: String,
       enum: ["ACTIVE", "CANCELED", "REFUNDED", "EXPIRED"],
       default: "ACTIVE",
+    },
+    result: {
+      type: String,
+      enum: ["WIN", "LOSS", "TBD"],
+      default: "TBD",
     },
     bucksSpent: {
       type: Number,

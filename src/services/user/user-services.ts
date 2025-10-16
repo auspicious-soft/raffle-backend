@@ -477,14 +477,15 @@ export const raffleServices = {
       .skip(skip)
       .limit(limitNumber)
       .populate("raffleId")
-      .sort({ createdAt: -1 });
-
+      .sort({ createdAt: -1 })
+      .lean();
     const raffles = rawRaffles.map((ur: any) => {
-      const raffle = ur.raffleId?.toObject() || {};
+    const raffle = ur.raffleId || {};
       return {
         raffleId: raffle._id,
         title: raffle.title,
         price: raffle.price,
+         result: ur.result,
         rewards: raffle.rewards.map((r: any) => ({
           rewardName: r.rewardName,
           rewardType: r.rewardType,
