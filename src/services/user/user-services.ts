@@ -744,8 +744,8 @@ export const transactionService = {
           userId: userId.toString(),
           purpose: "BUCKS_TOPUP",
         },
-        success_url: `http://localhost:3000/user/bucks?session_id={CHECKOUT_SESSION_ID}`,
-        cancel_url: `http://localhost:3000/user/bucks?cancelled`,
+        success_url: `https://api.rafflehut.com/user/bucks?session_id={CHECKOUT_SESSION_ID}`,
+        cancel_url: `https://api.rafflehut.com/user/bucks?cancelled`,
       });
 
       const transaction = await TransactionModel.create(
