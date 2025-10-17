@@ -744,8 +744,8 @@ export const transactionService = {
           userId: userId.toString(),
           purpose: "BUCKS_TOPUP",
         },
-        success_url: `https://api.rafflehut.com/user/bucks?session_id={CHECKOUT_SESSION_ID}`,
-        cancel_url: `https://api.rafflehut.com/user/bucks?cancelled`,
+        success_url: `https://raffle-admin-alpha.vercel.app/user/buckss?session_id={CHECKOUT_SESSION_ID}`,
+        cancel_url: `https://raffle-admin-alpha.vercel.app/user/bucks?cancelled`,
       });
 
       const transaction = await TransactionModel.create(
