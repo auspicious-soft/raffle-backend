@@ -16,9 +16,18 @@ import axios from "axios";
 import fs from "fs";
 import { DateTime } from "luxon";
 import React from "react";
+import RaffleAnnouncementEmail from "./email-templates/winner-announcement";
 
 configDotenv();
 const resend = new Resend(process.env.RESEND_API_KEY);
+
+
+interface SendRaffleAnnouncementEmailProps {
+  to: string;
+  raffleTitle: string;
+  endDate: string | Date;
+  companyName?: string;
+}
 
 export function getTranslatedGender(gender: string, lang: string) {
   const translations = {
@@ -175,5 +184,26 @@ export async function sendRedeemRewardEmail({
     to,
     subject: "Your Reward Gift Card is Ready!",
     react: email, // ✅ this is a ReactNode, not a Promise
+  });
+}
+
+
+export async function sendRaffleAnnouncementEmail({
+  to,
+  raffleTitle,
+  endDate,
+  companyName,
+}: SendRaffleAnnouncementEmailProps) {
+  const email = React.createElement(RaffleAnnouncementEmail, {
+    raffleTitle,
+    endDate,
+    companyName,
+  });
+
+  await resend.emails.send({
+    from: process.env.COMPANY_RESEND_GMAIL_ACCOUNT as string,
+    to,
+    subject: `Raffle "${raffleTitle}" has concluded!`,
+    react: email, // ✅ this is a ReactNode
   });
 }

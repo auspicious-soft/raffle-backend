@@ -176,7 +176,7 @@ export const authServices = {
     const user = userData.toObject();
     delete user.password;
 
-    return { ...user, token };
+    return { ...user, token, hasShippingDetails:false };
   },
 
   async resendOtp(payload: any) {
