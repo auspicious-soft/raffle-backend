@@ -10,6 +10,7 @@ import {
 import jwt from "jsonwebtoken";
 import { Filter } from "bad-words";
 import { error } from "console";
+import { ShippingAddressModel } from "src/models/user/user-shipping-schema";
 
 configDotenv();
 
@@ -48,6 +49,18 @@ export const authServices = {
       isVerifiedEmail: true,
     });
 
+    let hasShippingDetails = false;
+    const userId = checkExist?._id;
+
+    const hasShippingAddress = await ShippingAddressModel.findOne({
+      userId:userId
+    })
+
+    if(hasShippingAddress){
+      hasShippingDetails=true;
+    }
+
+
     if (!checkExist) {
       throw new Error("userNotFound");
     }
@@ -64,7 +77,7 @@ export const authServices = {
       throw new Error("invalidPassword");
     }
     delete checkExist.password;
-    return checkExist;
+    return {...checkExist, hasShippingDetails};
   },
 
   async forgetPassword(payload: any) {

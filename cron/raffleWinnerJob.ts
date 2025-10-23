@@ -53,6 +53,8 @@ cron.schedule("* * * * *", async () => {
           ? raffle.rewards[0].rewardType
           : "DIGITAL";
 
+      const winnerStatus = rewardType === "DIGITAL" ? "GRANTED" : "PENDING";
+
       const existingWinner = await RaffleWinnerModel.findOne({
         raffleId: raffle._id,
       });
@@ -62,7 +64,7 @@ cron.schedule("* * * * *", async () => {
           userId: winnerUserId,
           userRaffleId: winnerEntry._id,
           raffleType: rewardType,
-          status: "GRANTED",
+          status: winnerStatus,
           awardedAt: new Date(),
         });
       } else {
