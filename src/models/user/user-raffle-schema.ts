@@ -53,7 +53,7 @@ const userRaffleSchema = new Schema<IUserRaffle>(
 
 userRaffleSchema.index({ userId: 1, raffleId: 1 });
 userRaffleSchema.index({ orderId: 1 });
-userRaffleSchema.index({ raffleId: 1, slotNumber: 1 }, { unique: true });
+userRaffleSchema.index({ raffleId: 1, slotNumber: 1 });
 
 export const UserRaffleModel = mongoose.model<IUserRaffle>(
   "userRaffles",

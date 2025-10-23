@@ -212,6 +212,12 @@ export const shippingServices = {
       city,
       postalCode,
     });
+    const checkShippingDetails = await ShippingAddressModel.findOne({
+      userId:userId
+    })
+    if(checkShippingDetails){
+     throw new Error("Shipping Details already exist");
+    }
 
     if (phoneNumber) {
       const existing = await ShippingAddressModel.findOne({
