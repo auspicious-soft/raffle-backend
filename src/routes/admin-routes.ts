@@ -25,6 +25,7 @@ import {
 import { createRedemptionLadder, deleteLadder, getAllLadders, getSingleLadder, updateLadder, userRedemptionHistoy } from "src/controllers/admin/redemption-ladder-controller";
 import {
   getAdminData,
+  revenueOverview,
   updateAdminData,
 } from "src/controllers/admin/settings-controller";
 
@@ -64,4 +65,9 @@ router.post("/block-unblock",blockUnblockUser)
 router.route("/redemption-ladder").post(createRedemptionLadder).get(getAllLadders)
 router.route("/ladder/:id").get(getSingleLadder).delete(deleteLadder).patch(updateLadder)
 router.get("/redemption-history",userRedemptionHistoy)
+
+
+// General Info API's
+router.get("/revenue-overview",revenueOverview)
+
 export { router };

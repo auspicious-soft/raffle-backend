@@ -1,5 +1,6 @@
 import { Request, Response } from "express";
 import { UserModel } from "src/models/user/user-schema";
+import { generalInformation } from "src/services/admin/admin-services";
 import { hashPassword, verifyPassword } from "src/utils/helper";
 import { BADREQUEST, INTERNAL_SERVER_ERROR, OK } from "src/utils/response";
 
@@ -58,6 +59,23 @@ export const updateAdminData = async (req: Request, res: Response) => {
     if (err.message) {
       return BADREQUEST(res, err.message);
     }
+    return INTERNAL_SERVER_ERROR(res);
+  }
+};
+
+export const revenueOverview = async (req: Request, res: Response) => {
+  try {
+    const page = req.query.page || 1;
+    const limit = req.query.limit || 10;
+ 
+    const response = await generalInformation.revenue({
+      page,
+      limit,
+    });
+ 
+    return OK(res, response);
+  } catch (err: any) {
+    if (err.message) return BADREQUEST(res, err.message);
     return INTERNAL_SERVER_ERROR(res);
   }
 };

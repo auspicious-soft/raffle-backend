@@ -5,6 +5,7 @@ import { GiftCategoryModel } from "src/models/admin/gift-category-schema";
 import { PromoCodeModel } from "src/models/admin/promo-code-schema";
 import { RaffleModel } from "src/models/admin/raffle-schema";
 import { RedemptionModel } from "src/models/admin/redemption-ladder-schema";
+import { TransactionModel } from "src/models/user/transaction-schema";
 import { UserRedemptionModel } from "src/models/user/user-redemptionHistory-schema";
 import { UserModel } from "src/models/user/user-schema";
 import { ShippingAddressModel } from "src/models/user/user-shipping-schema";
@@ -997,3 +998,74 @@ export const RedempLadder = {
     };
   },
 };
+
+export const generalInformation ={
+  revenue: async (payload: any) => {
+  const { page, limit } = payload;
+ 
+  const pageNumber = parseInt(page, 10) || 1;     // ✅ default to 1
+  const limitNumber = parseInt(limit, 10) || 10;  // ✅ default to 10
+  const skip = (pageNumber - 1) * limitNumber;
+ 
+  const filter = { status: "SUCCESS" };
+ 
+  const totalTransactions = await TransactionModel.countDocuments(filter);
+  const rawTransactions = await TransactionModel.find(filter)
+    .skip(skip)
+    .limit(limitNumber)
+    .select("_id finalAmountCents createdAt status userId amountCents")
+    .populate("userId", "userName")
+    .populate("promoCodeId", "reedemCode discount")
+    .sort({ createdAt: -1 })
+    .lean();
+ 
+  const transactions = rawTransactions.map((t: any) => ({
+    _id: t._id,
+    userName: t.userId?.userName || "Unknown User",
+    bucksPurchased: t.amountCents / 100,
+    promoCode: t.promoCodeId?.reedemCode || null,
+    discount: t.promoCodeId?.discount || 0,
+    amount: t.finalAmountCents / 100,
+    createdAt: t.createdAt,
+    status: t.status,
+  }));
+ 
+  const now = new Date();
+  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+  const startOfWeek = new Date(now);
+  startOfWeek.setDate(now.getDate() - now.getDay() + 1);
+  startOfWeek.setHours(0, 0, 0, 0);
+ 
+  const totalRevenueAgg = await TransactionModel.aggregate([
+    { $match: filter },
+    { $group: { _id: null, total: { $sum: "$finalAmountCents" } } },
+  ]);
+ 
+  const monthlyRevenueAgg = await TransactionModel.aggregate([
+    { $match: { ...filter, createdAt: { $gte: startOfMonth } } },
+    { $group: { _id: null, total: { $sum: "$finalAmountCents" } } },
+  ]);
+ 
+  const weeklyRevenueAgg = await TransactionModel.aggregate([
+    { $match: { ...filter, createdAt: { $gte: startOfWeek } } },
+    { $group: { _id: null, total: { $sum: "$finalAmountCents" } } },
+  ]);
+ 
+  const totalRevenue = (totalRevenueAgg[0]?.total || 0) / 100;
+  const revenueThisMonth = (monthlyRevenueAgg[0]?.total || 0) / 100;
+  const revenueThisWeek = (weeklyRevenueAgg[0]?.total || 0) / 100;
+ 
+  return {
+    totalRevenue,
+    revenueThisMonth,
+    revenueThisWeek,
+    transactions,
+    pagination: {
+      total: totalTransactions,
+      page: pageNumber,
+      limit: limitNumber,
+      totalPages: Math.ceil(totalTransactions / limitNumber),
+    },
+  };
+}
+}
