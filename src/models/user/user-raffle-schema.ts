@@ -4,7 +4,6 @@ export interface IUserRaffle extends Document {
   userId: mongoose.Types.ObjectId;
   raffleId: mongoose.Types.ObjectId;
   orderId: mongoose.Types.ObjectId;
-  slotNumber: number;
   status: "ACTIVE" | "CANCELED" | "REFUNDED" | "EXPIRED";
   bucksSpent: number;
   createdAt: Date;
@@ -29,10 +28,7 @@ const userRaffleSchema = new Schema<IUserRaffle>(
       ref: "orders",
       required: true,
     },
-    slotNumber: {
-      type: Number,
-      required: true,
-    },
+
     status: {
       type: String,
       enum: ["ACTIVE", "CANCELED", "REFUNDED", "EXPIRED"],
@@ -53,7 +49,7 @@ const userRaffleSchema = new Schema<IUserRaffle>(
 
 userRaffleSchema.index({ userId: 1, raffleId: 1 });
 userRaffleSchema.index({ orderId: 1 });
-userRaffleSchema.index({ raffleId: 1, slotNumber: 1 });
+userRaffleSchema.index({ raffleId: 1});
 
 export const UserRaffleModel = mongoose.model<IUserRaffle>(
   "userRaffles",

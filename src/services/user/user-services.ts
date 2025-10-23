@@ -375,7 +375,6 @@ export const raffleServices = {
           userId,
           raffleId,
           orderId: order[0]._id,
-          slotNumber: 1,
           status: "ACTIVE",
           bucksSpent: bucksRequired,
         },
