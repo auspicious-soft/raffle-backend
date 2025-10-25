@@ -1304,6 +1304,8 @@ export const getDashboardDataService = async (searchEntryNumber?: number) => {
   const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
   const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
 
+  const last24Hours = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+
   const liveRafflesCountPromise = RaffleModel.countDocuments({
     status: "ACTIVE",
     isDeleted: false,
@@ -1332,6 +1334,10 @@ export const getDashboardDataService = async (searchEntryNumber?: number) => {
       },
     },
   ]);
+
+  const raffleWinsLast24HoursPromise = RaffleWinnerModel.countDocuments({
+  awardedAt: { $gte: last24Hours }, 
+});
 
   const activeRafflesPromise = RaffleModel.find({
     status: "ACTIVE",
@@ -1409,6 +1415,7 @@ export const getDashboardDataService = async (searchEntryNumber?: number) => {
 
   const [
     liveRafflesCount,
+    raffleWinsLast24Hours,
     totalRafflesCount,
     totalRaffleWinsCount,
     revenueAgg,
@@ -1418,6 +1425,7 @@ export const getDashboardDataService = async (searchEntryNumber?: number) => {
     entriesGraphAgg,
   ] = await Promise.all([
     liveRafflesCountPromise,
+    raffleWinsLast24HoursPromise,
     totalRafflesCountPromise,
     totalRaffleWinsCountPromise,
     revenueThisMonthPromise,
@@ -1481,6 +1489,7 @@ export const getDashboardDataService = async (searchEntryNumber?: number) => {
 
   return {
     liveRafflesCount,
+    raffleWinsLast24Hours,
     totalRafflesCount,
     totalRaffleWinsCount,
     revenueThisMonth,
