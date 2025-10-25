@@ -1458,18 +1458,18 @@ export const getDashboardDataService = async (searchEntryNumber?: number) => {
     : { pending: 0, shipped: 0, delivered: 0 };
 
   const months = [
-    "January",
-    "February",
+    "Jan",
+    "Feb",
     "March",
     "April",
     "May",
     "June",
     "July",
-    "August",
-    "September",
-    "October",
-    "November",
-    "December",
+    "Aug",
+    "Sept",
+    "Oct",
+    "Nov",
+    "Dec",
   ];
 
   const entriesGraph = months.map((month, index) => {
