@@ -7,6 +7,7 @@ import { RaffleModel } from "src/models/admin/raffle-schema";
 import { RaffleWinnerModel } from "src/models/admin/raffle-winner-schema";
 import { RedemptionModel } from "src/models/admin/redemption-ladder-schema";
 import { TransactionModel } from "src/models/user/transaction-schema";
+import { UserRaffleModel } from "src/models/user/user-raffle-schema";
 import { UserRedemptionModel } from "src/models/user/user-redemptionHistory-schema";
 import { UserModel } from "src/models/user/user-schema";
 import { ShippingAddressModel } from "src/models/user/user-shipping-schema";
@@ -1070,72 +1071,90 @@ export const generalInformation = {
       },
     };
   },
-  winnerAndFullfillment: async (payload: any) => {
-    const { page, limit, search } = payload;
+ winnerAndFullfillment: async (payload: any) => {
+  const { page, limit, search } = payload;
 
-    const pageNumber = parseInt(page, 10) || 1;
-    const limitNumber = parseInt(limit, 10) || 10;
-    const skip = (pageNumber - 1) * limitNumber;
+  const pageNumber = parseInt(page, 10) || 1;
+  const limitNumber = parseInt(limit, 10) || 10;
+  const skip = (pageNumber - 1) * limitNumber;
 
-    const matchStage: any = {};
+  const matchStage: any = {};
 
-    if (search && search.trim()) {
-      const users = await UserModel.find({
-        userName: { $regex: search, $options: "i" },
-      }).select("_id");
-      const userIds = users.map((u) => u._id);
-      matchStage.userId = { $in: userIds.length ? userIds : ["__no_user__"] };
-    }
+  let searchRegex;
+  if (search && search.trim()) {
+    searchRegex = new RegExp(search.trim(), "i"); 
 
-    const totalRecords = await RaffleWinnerModel.countDocuments(matchStage);
+    const users = await UserModel.find({
+      $or: [
+        { userName: searchRegex },
+        { email: searchRegex },
+      ],
+    }).select("_id");
 
-    const winnersList = await RaffleWinnerModel.aggregate([
-      { $match: matchStage },
-      {
-        $lookup: {
-          from: "users",
-          localField: "userId",
-          foreignField: "_id",
-          as: "user",
-        },
+    const userIds = users.map((u) => u._id);
+
+    const raffles = await RaffleModel.find({
+      title: searchRegex,
+    }).select("_id");
+
+    const raffleIds = raffles.map((r) => r._id);
+
+    matchStage.$or = [
+      { userId: { $in: userIds } },
+      { raffleId: { $in: raffleIds } },
+      { status: searchRegex },
+    ];
+  }
+
+  const totalRecords = await RaffleWinnerModel.countDocuments(matchStage);
+
+  const winnersList = await RaffleWinnerModel.aggregate([
+    { $match: matchStage },
+    {
+      $lookup: {
+        from: "users",
+        localField: "userId",
+        foreignField: "_id",
+        as: "user",
       },
-      { $unwind: "$user" },
-      {
-        $lookup: {
-          from: "raffles",
-          localField: "raffleId",
-          foreignField: "_id",
-          as: "raffle",
-        },
+    },
+    { $unwind: "$user" },
+    {
+      $lookup: {
+        from: "raffles",
+        localField: "raffleId",
+        foreignField: "_id",
+        as: "raffle",
       },
-      { $unwind: "$raffle" },
-      {
-        $project: {
-          _id: 1,
-          raffleId: 1,
-          raffleTitle: "$raffle.title",
-          userName: "$user.userName",
-          email: "$user.email",
-          raffleType: 1,
-          status: 1,
-          trackingLink: 1,
-        },
+    },
+    { $unwind: "$raffle" },
+    {
+      $project: {
+        _id: 1,
+        raffleId: 1,
+        raffleTitle: "$raffle.title",
+        userName: "$user.userName",
+        email: "$user.email",
+        raffleType: 1,
+        status: 1,
+        trackingLink: 1,
       },
-      { $sort: { awardedAt: -1 } },
-      { $skip: skip },
-      { $limit: limitNumber },
-    ]);
+    },
+    { $sort: { awardedAt: -1 } },
+    { $skip: skip },
+    { $limit: limitNumber },
+  ]);
 
-    return {
-      winnersList,
-      pagination: {
-        total: totalRecords,
-        page: pageNumber,
-        limit: limitNumber,
-        totalPages: Math.ceil(totalRecords / limitNumber),
-      },
-    };
-  },
+  return {
+    winnersList,
+    pagination: {
+      total: totalRecords,
+      page: pageNumber,
+      limit: limitNumber,
+      totalPages: Math.ceil(totalRecords / limitNumber),
+    },
+  };
+},
   addTrackingLink: async (payload: any) => {
     const { id, link } = payload;
 
@@ -1144,9 +1163,9 @@ export const generalInformation = {
       throw new Error("Winner entry not found.");
     }
 
-    if (winner.trackingLink) {
-      throw new Error("Tracking link already exists for this winner.");
-    }
+    // if (winner.trackingLink) {
+    //   throw new Error("Tracking link already exists for this winner.");
+    // }
 
     winner.trackingLink = link;
     await winner.save();
@@ -1159,7 +1178,10 @@ export const generalInformation = {
   updateDeliveryStatus: async (payload: any) => {
     const { id, status } = payload;
 
-    const winner = await RaffleWinnerModel.findById(id).populate("userId","email userName");
+    const winner = await RaffleWinnerModel.findById(id).populate(
+      "userId",
+      "email userName"
+    );
     const ALLOWED_STATUS = [
       "PENDING",
       "PROCESSING",
@@ -1180,60 +1202,64 @@ export const generalInformation = {
       throw new Error(`Status is already ${status} `);
     }
     const raffle = await RaffleModel.findOne({
-      _id:winner.raffleId,
-      isDeleted:false,
-    })
-    if(!raffle){
-      throw new Error("Raffle Not Found to udpate rewardStatus.")
+      _id: winner.raffleId,
+      isDeleted: false,
+    });
+    if (!raffle) {
+      throw new Error("Raffle Not Found to udpate rewardStatus.");
     }
-    if(raffle.rewards[0].rewardType === "DIGITAL"){
-      throw new Error("")
+    if (raffle.rewards[0].rewardType === "DIGITAL") {
+      throw new Error("");
     }
-    
+
     winner.status = status;
     await winner.save();
 
     if (raffle.rewards.length > 0) {
-    raffle.rewards = raffle.rewards.map((reward) => ({
-      ...reward.toObject(),
-      rewardStatus: status, 
-    }));
+      raffle.rewards = raffle.rewards.map((reward) => ({
+        ...reward.toObject(),
+        rewardStatus: status,
+      }));
 
-    await raffle.save();
-  }
-  const user = winner.userId as any;
+      await raffle.save();
+    }
+    const user = winner.userId as any;
 
-  if (raffle.rewards[0].rewardType === "PHYSICAL" && ["SHIPPED","DELIVERED","CANCELED"].includes(status)) {
-  await sendPhysicalRewardStatusEmail({
-    to: user.email,
-    userName: user.userName,
-    raffleTitle: raffle.title,
-    status,
-    trackingLink: winner.trackingLink, 
-    companyName: "Your Company",
-  });
-}
+    if (
+      raffle.rewards[0].rewardType === "PHYSICAL" &&
+      ["SHIPPED", "DELIVERED", "CANCELED"].includes(status)
+    ) {
+      await sendPhysicalRewardStatusEmail({
+        to: user.email,
+        userName: user.userName,
+        raffleTitle: raffle.title,
+        status,
+        trackingLink: winner.trackingLink,
+        companyName: "Your Company",
+      });
+    }
 
-  const responseData = {
-    _id: winner._id,
-    raffleId: winner.raffleId,
-    raffleType: winner.raffleType,
-    status,
-    trackingLink: winner.trackingLink || "",
-    raffleTitle: raffle.title,
-    userName: user.userName,
-    email: user.email,
-  };
+    const responseData = {
+      _id: winner._id,
+      raffleId: winner.raffleId,
+      raffleType: winner.raffleType,
+      status,
+      trackingLink: winner.trackingLink || "",
+      raffleTitle: raffle.title,
+      userName: user.userName,
+      email: user.email,
+    };
 
     return {
-     winner:responseData,
+      winner: responseData,
     };
   },
 };
 
-
-export const getDashboardDataService = async () => {
+export const getDashboardDataService = async (searchEntryNumber?: number) => {
   const now = new Date();
+  const year = now.getFullYear();
+
   const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
   const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
 
@@ -1242,7 +1268,9 @@ export const getDashboardDataService = async () => {
     isDeleted: false,
   });
 
-  const totalRafflesCountPromise = RaffleModel.countDocuments({ isDeleted: false });
+  const totalRafflesCountPromise = RaffleModel.countDocuments({
+    isDeleted: false,
+  });
 
   const totalRaffleWinsCountPromise = RaffleModel.countDocuments({
     winnerId: { $ne: null },
@@ -1250,31 +1278,94 @@ export const getDashboardDataService = async () => {
   });
 
   const revenueThisMonthPromise = TransactionModel.aggregate([
-    { $match: { createdAt: { $gte: startOfMonth, $lte: endOfMonth }, status: "SUCCESS" } },
-    { $group: { _id: null, totalRevenue: { $sum: "$amount" } } },
+    {
+      $match: {
+        createdAt: { $gte: startOfMonth, $lte: endOfMonth },
+        status: "SUCCESS",
+      },
+    },
+    {
+      $group: {
+        _id: null,
+        totalRevenue: { $sum: "$amount" },
+      },
+    },
   ]);
 
-   const activeRafflesPromise = RaffleModel.find({ status: "ACTIVE", isDeleted: false })
+  const activeRafflesPromise = RaffleModel.find({
+    status: "ACTIVE",
+    isDeleted: false,
+  })
     .sort({ startDate: -1 })
     .select({ title: 1, endDate: 1, totalSlots: 1, bookedSlots: 1, rewards: 1 })
     .lean();
 
-  const recentWinnersPromise = RaffleWinnerModel.find()
-    .sort({ awardedAt: -1 })
-    .limit(10)
-    .populate("userId", "userName")
-    .lean();
+  let recentWinnersPromise;
 
+  if (searchEntryNumber && searchEntryNumber > 0) {
+    recentWinnersPromise = RaffleWinnerModel.find()
+      .sort({ awardedAt: 1 })
+      .skip(searchEntryNumber - 1)
+      .limit(1)
+      .populate("userId", "userName")
+      .lean();
+  } else {
+    recentWinnersPromise = RaffleWinnerModel.find()
+      .sort({ awardedAt: -1 })
+      .limit(1000)
+      .populate("userId", "userName")
+      .lean();
+  }
   const redemptionOverviewPromise = RaffleWinnerModel.aggregate([
     {
       $group: {
         _id: null,
         pending: { $sum: { $cond: [{ $eq: ["$status", "PENDING"] }, 1, 0] } },
         shipped: { $sum: { $cond: [{ $eq: ["$status", "SHIPPED"] }, 1, 0] } },
-        delivered: { $sum: { $cond: [{ $eq: ["$status", "DELIVERED"] }, 1, 0] } },
+        delivered: {
+          $sum: { $cond: [{ $eq: ["$status", "DELIVERED"] }, 1, 0] },
+        },
       },
     },
   ]);
+
+  const entriesGraphPromise = UserRaffleModel.aggregate([
+  {
+    $lookup: {
+      from: "raffles",
+      localField: "raffleId",
+      foreignField: "_id",
+      as: "raffle",
+    },
+  },
+  { $unwind: "$raffle" },
+
+  { $unwind: "$raffle.rewards" },
+
+  {
+    $match: {
+      "raffle.isDeleted": false,
+      "raffle.rewards.rewardType": { $in: ["DIGITAL", "PHYSICAL"] },
+      createdAt: {
+        $gte: new Date(year, 0, 1),
+        $lte: new Date(year, 11, 31),
+      },
+    },
+  },
+  {
+    $project: {
+      month: { $month: "$createdAt" },
+      raffleType: "$raffle.rewards.rewardType",
+    },
+  },
+  {
+    $group: {
+      _id: { month: "$month", raffleType: "$raffleType" },
+      totalEntries: { $sum: 1 },
+    },
+  },
+]);
+
 
   const [
     liveRafflesCount,
@@ -1284,6 +1375,7 @@ export const getDashboardDataService = async () => {
     activeRafflesRaw,
     recentWinnersRaw,
     redemptionOverviewAgg,
+    entriesGraphAgg,
   ] = await Promise.all([
     liveRafflesCountPromise,
     totalRafflesCountPromise,
@@ -1292,9 +1384,10 @@ export const getDashboardDataService = async () => {
     activeRafflesPromise,
     recentWinnersPromise,
     redemptionOverviewPromise,
+    entriesGraphPromise,
   ]);
 
-   const activeRaffles = activeRafflesRaw.map((raffle) => ({
+  const activeRaffles = activeRafflesRaw.map((raffle) => ({
     _id: raffle._id,
     title: raffle.title,
     endDate: raffle.endDate,
@@ -1304,18 +1397,37 @@ export const getDashboardDataService = async () => {
   }));
 
   const recentWinners = recentWinnersRaw.map((winner) => {
-  const user = winner.userId as any; 
-  return {
-    userId: user._id,
-    userName: user.userName,
-  };
-});
-
+    const user = winner.userId as any;
+    return {
+      userId: user._id,
+      userName: user.userName,
+    };
+  });
 
   const revenueThisMonth = revenueAgg.length ? revenueAgg[0].totalRevenue : 0;
   const redemptionOverview = redemptionOverviewAgg.length
     ? redemptionOverviewAgg[0]
     : { pending: 0, shipped: 0, delivered: 0 };
+
+  const months = [
+    "January", "February", "March", "April", "May", "June",
+    "July", "August", "September", "October", "November", "December",
+  ];
+
+  const entriesGraph = months.map((month, index) => {
+    const digital = entriesGraphAgg.find(
+      (e) => e._id.month === index + 1 && e._id.raffleType === "DIGITAL"
+    );
+    const physical = entriesGraphAgg.find(
+      (e) => e._id.month === index + 1 && e._id.raffleType === "PHYSICAL"
+    );
+
+    return {
+      month,
+      digitalRaffleEntries: digital ? digital.totalEntries : 0,
+      physicalRaffleEntries: physical ? physical.totalEntries : 0,
+    };
+  });
 
   return {
     liveRafflesCount,
@@ -1325,5 +1437,6 @@ export const getDashboardDataService = async () => {
     activeRaffles,
     recentWinners,
     redemptionOverview,
+    entriesGraph,
   };
 };

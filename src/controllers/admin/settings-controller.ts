@@ -126,10 +126,19 @@ export const changeRewardStatus = async (req:Request, res:Response) =>{
 
 export const getDashboardDataController = async (req: Request, res: Response) => {
   try {
-    const data = await getDashboardDataService();
-    res.status(200).json({ success: true, data });
+    const { entryNumber } = req.query;
+
+    if (entryNumber && isNaN(Number(entryNumber))) {
+      return BADREQUEST(res, "Invalid entry number provided.");
+    }
+
+    const data = await getDashboardDataService(
+      entryNumber ? Number(entryNumber) : undefined
+    );
+
+    return OK(res, data);
   } catch (error: any) {
     console.error("Dashboard API error:", error);
-    res.status(500).json({ success: false, message: error.message || "Server error" });
+    return INTERNAL_SERVER_ERROR(res, error.message || "Server error");
   }
 };
