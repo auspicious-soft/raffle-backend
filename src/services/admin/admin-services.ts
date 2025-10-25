@@ -519,7 +519,32 @@ export const RaffleServices = {
       throw new Error("Raffle not found");
     }
 
-    return raffle;
+      const winnerDetails =
+    raffle.winnerId && typeof raffle.winnerId !== "string"
+      ? { userId: (raffle.winnerId as any)._id, userName: (raffle.winnerId as any).userName }
+      : null;
+    const userRaffles = await UserRaffleModel.find({ raffleId: raffle._id })
+    .sort({ createdAt: -1 })
+    .populate({
+      path: "userId",
+      select: "userName _id",
+    })
+    .lean();
+
+  const RaffleBoughtBy = userRaffles.map((entry) => {
+  const user = entry.userId && typeof entry.userId !== "string" ? (entry.userId as any) : null;
+  return {
+    PurchasedOn: entry.createdAt,
+    userId: user?._id || null,
+    userName: user?.userName || null,
+  };
+});
+
+    return {
+    ...raffle,
+    winnerDetails,
+    RaffleBoughtBy,
+  };
   },
 
   deleteRaffle: async (payload: any) => {
