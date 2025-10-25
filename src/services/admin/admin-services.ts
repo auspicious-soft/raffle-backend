@@ -828,6 +828,7 @@ export const UserServices = {
         raffleId: raffle._id,
         raffleTitle: raffle.title,
         rewardName: raffle.rewards?.[0]?.rewardName || "",
+        rewardImage: raffle.rewards?.[0]?.rewardImages[0] || "",
         purchasedAt: entry.createdAt,
       };
     });
