@@ -17,6 +17,8 @@ import fs from "fs";
 import { DateTime } from "luxon";
 import React from "react";
 import RaffleAnnouncementEmail from "./email-templates/winner-announcement";
+import PhysicalRaffleStatusEmail from "./email-templates/raffle-reward-status";
+import WinnerRewardEmail from "./email-templates/winner-reward";
 
 configDotenv();
 const resend = new Resend(process.env.RESEND_API_KEY);
@@ -26,6 +28,23 @@ interface SendRaffleAnnouncementEmailProps {
   to: string;
   raffleTitle: string;
   endDate: string | Date;
+  companyName?: string;
+}
+
+interface SendPhysicalRewardStatusEmailProps {
+  to: string;
+  userName?: string;
+  raffleTitle: string;
+  status: "SHIPPED" | "DELIVERED" | "CANCELED";
+  trackingLink?: string;
+  companyName?: string;
+}
+
+interface SendWinnerRewardEmailProps {
+  to: string;
+  userName: string;
+  raffleTitle: string;
+  promoCode?: string;
   companyName?: string;
 }
 
@@ -112,44 +131,31 @@ export async function generateAndSendOtp(
     userType,
   });
 
-//   if (type === "EMAIL") {
-//     await resend.emails.send({
-//       from: process.env.COMPANY_RESEND_GMAIL_ACCOUNT as string,
-//       to: value,
-//       subject:
-//         purpose === "SIGNUP"
-//           ? customMessages["subjectEmailVerification"]
-//           : customMessages["subjectResetPassword"],
-//       react:
-//         purpose === "SIGNUP"
-//           ? SignupVerification({ otp: otp})
-//           : ForgotPasswordVerification({ otp: otp  }),
-//     });
-//   }
-  console.log(otp,"OTP SENT");
+  if (type === "EMAIL") {
+    const emailTemplate =
+      purpose === "SIGNUP"
+        ? React.createElement(SignupVerification, { otp })
+        : React.createElement(ForgotPasswordVerification, { otp });
+
+    const subject =
+      purpose === "SIGNUP"
+        ? customMessages["subjectEmailVerification"]
+        : customMessages["subjectResetPassword"];
+
+    await resend.emails.send({
+      from: process.env.COMPANY_RESEND_GMAIL_ACCOUNT as string,
+      to: value,
+      subject,
+      react: emailTemplate,
+    });
+
+    console.log(`📧 OTP Email sent to ${value}: ${otp}`);
+  } else {
+    console.log(`📱 OTP sent to phone ${value}: ${otp}`);
+  }
+
   return otp;
 }
-
-
-
-// export async function verifyAppleToken(idToken: string) {
-//   const appleKeys = await axios.get("https://appleid.apple.com/auth/keys");
-//   const decodedHeader: any = jwt.decode(idToken, { complete: true })?.header;
-//   const key = appleKeys.data.keys.find((k: any) => k.kid === decodedHeader.kid);
-
-//   if (!key) throw new Error("Apple public key not found");
-
-//   const pubKey = jwkToPem(key);
-//   const payload: any = jwt.verify(idToken, pubKey, {
-//     algorithms: ["RS256"],
-//   });
-
-//   if (payload.iss !== "https://appleid.apple.com") {
-//     throw new Error("Invalid Apple token issuer");
-//   }
-
-//   return payload;
-// }
 
 export function convertToUTC(date: string, hour: number, tz: string) {
   return DateTime.fromISO(`${date}T${hour.toString().padStart(2, "0")}:00`, {
@@ -183,7 +189,7 @@ export async function sendRedeemRewardEmail({
     from: process.env.COMPANY_RESEND_GMAIL_ACCOUNT as string,
     to,
     subject: "Your Reward Gift Card is Ready!",
-    react: email, // ✅ this is a ReactNode, not a Promise
+    react: email, 
   });
 }
 
@@ -205,5 +211,55 @@ export async function sendRaffleAnnouncementEmail({
     to,
     subject: `Raffle "${raffleTitle}" has concluded!`,
     react: email, // ✅ this is a ReactNode
+  });
+}
+
+export async function sendPhysicalRewardStatusEmail({
+  to,
+  userName,
+  raffleTitle,
+  status,
+  trackingLink,
+  companyName,
+}: SendPhysicalRewardStatusEmailProps) {
+  const email = React.createElement(PhysicalRaffleStatusEmail, {
+    userName,
+    raffleTitle,
+    status,
+    trackingLink,
+    companyName,
+  });
+
+  let subject = `Your reward for "${raffleTitle}" is ${status}`;
+
+  await resend.emails.send({
+    from: process.env.COMPANY_RESEND_GMAIL_ACCOUNT as string,
+    to,
+    subject,
+    react: email, 
+  });
+}
+
+export async function sendWinnerRewardEmail({
+  to,
+  userName,
+  raffleTitle,
+  promoCode,
+  companyName = "Your Company",
+}: SendWinnerRewardEmailProps) {
+  const email = React.createElement(WinnerRewardEmail, {
+    userName,
+    raffleTitle,
+    promoCode,
+    companyName,
+  });
+
+  const subject = `🎉 Congratulations! You redeemed your reward for "${raffleTitle}"`;
+
+  await resend.emails.send({
+    from: process.env.COMPANY_RESEND_GMAIL_ACCOUNT as string,
+    to,
+    subject,
+    react: email, 
   });
 }

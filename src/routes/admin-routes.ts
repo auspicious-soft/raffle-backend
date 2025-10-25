@@ -24,9 +24,13 @@ import {
 } from "src/controllers/admin/raffle-controller";
 import { createRedemptionLadder, deleteLadder, getAllLadders, getSingleLadder, updateLadder, userRedemptionHistoy } from "src/controllers/admin/redemption-ladder-controller";
 import {
+  addLink,
+  changeRewardStatus,
   getAdminData,
+  getDashboardDataController,
   revenueOverview,
   updateAdminData,
+  winnerAndFullfillment,
 } from "src/controllers/admin/settings-controller";
 
 // Code
@@ -69,5 +73,11 @@ router.get("/redemption-history",userRedemptionHistoy)
 
 // General Info API's
 router.get("/revenue-overview",revenueOverview)
+router.get("/winner-and-fullfillment",winnerAndFullfillment)
+router.post("/add-trackingLink",addLink)
+router.post("/update-rewardStatus",changeRewardStatus)
+router.get("/dashboard", getDashboardDataController);
+
+
 
 export { router };

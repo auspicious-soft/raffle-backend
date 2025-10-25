@@ -1,9 +1,7 @@
 import cron from "node-cron";
-import mongoose from "mongoose";
 import { RaffleModel } from "src/models/admin/raffle-schema";
 import { UserRaffleModel } from "src/models/user/user-raffle-schema";
 import { RaffleWinnerModel } from "src/models/admin/raffle-winner-schema";
-import RaffleAnnouncementEmail from "src/utils/email-templates/winner-announcement";
 import { sendRaffleAnnouncementEmail } from "src/utils/helper";
 
 cron.schedule("* * * * *", async () => {
@@ -14,7 +12,8 @@ cron.schedule("* * * * *", async () => {
 
     const endedRaffles = await RaffleModel.find({
       endDate: { $lte: now },
-      status: { $nin: ["COMPLETED", "EXPIRED"] },
+      status: "COMPLETED",
+      hasWinnerAnnounced: { $ne: true },
       isDeleted: false,
     }).lean();
 
@@ -44,9 +43,11 @@ cron.schedule("* * * * *", async () => {
 
       const randomIndex = Math.floor(Math.random() * participants.length);
       const winnerEntry = participants[randomIndex];
-      const winnerUserId = winnerEntry.userId;
+      const winnerUserId =
+        typeof winnerEntry.userId === "object"
+          ? (winnerEntry.userId as any)._id
+          : winnerEntry.userId;
 
-      // 4️⃣ Detect reward type from the raffle details
       const rewardType =
         raffle.rewards?.[0]?.rewardType &&
         ["DIGITAL", "PHYSICAL"].includes(raffle.rewards[0].rewardType)
@@ -84,10 +85,17 @@ cron.schedule("* * * * *", async () => {
         ),
       ]);
 
-      await RaffleModel.findByIdAndUpdate(raffle._id, {
-        status: "COMPLETED",
-        winnerId: winnerUserId,
-      });
+      const raffleDoc = await RaffleModel.findById(raffle._id);
+      if (raffleDoc) {
+        if (raffleDoc.rewards.length > 0) {
+          raffleDoc.rewards[0].rewardStatus = winnerStatus;
+        }
+
+        raffleDoc.winnerId = winnerUserId;
+        raffleDoc.hasWinnerAnnounced = true;
+
+        await raffleDoc.save();
+      }
 
       console.log(
         `[CRON] 🏆 Winner selected for raffle ${raffle.title}: ${winnerUserId.toString()}`

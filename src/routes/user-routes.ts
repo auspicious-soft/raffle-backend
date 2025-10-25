@@ -3,7 +3,7 @@ import { addToCart, getCartItems, removeFromCart } from "src/controllers/user/ca
 import { getUser, initiatePhoneVerification, shippingDetails, updateUser, verifyPhoneNumber } from "src/controllers/user/profile-controller";
 import { getRedemptionCategories, getReedemLadder, reedemReward } from "src/controllers/user/redemption-controller";
 import { applyPromoCode, createTransaction, getAllTransaction } from "src/controllers/user/transaction-controller";
-import { activeRaffles, buyRaffle, getSingleRaffle, RafflePurchaseHistory, withdrawRaffle } from "src/controllers/user/user-raffle-controller";
+import { activeRaffles, buyRaffle, getSingleRaffle, RafflePurchaseHistory, ReedemRaffleReward, withdrawRaffle } from "src/controllers/user/user-raffle-controller";
 
 // Code
 const router = Router();
@@ -28,6 +28,8 @@ router.get("/purchased-raffles", RafflePurchaseHistory);
 router.get("/ladder",getReedemLadder);
 router.get("/ladder-rewards",getRedemptionCategories)
 router.post("/redeem-reward",reedemReward)
+router.post("/reedem-raffleReward",ReedemRaffleReward)
+
 
 
 export { router };

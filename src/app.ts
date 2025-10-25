@@ -6,6 +6,7 @@ import connectDB from "./config/db";
 import { checkAuth } from "./middleware/check-auth";
 import { admin, auth, user } from "./routes";
 import "../cron/giftCardExpiryJob";
+import "../cron/raffleWinnerJob";
 import { stripeWebhook } from "./controllers/user/transaction-controller";
 import { router } from "./routes/admin-routes";
 import bodyParser from "body-parser";

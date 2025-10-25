@@ -9,7 +9,11 @@ import { CartQueueModel } from "src/models/user/cart_queue-schema";
 import { TransactionModel } from "src/models/user/transaction-schema";
 import { UserModel } from "src/models/user/user-schema";
 import { ShippingAddressModel } from "src/models/user/user-shipping-schema";
-import { generateAndSendOtp, sendRedeemRewardEmail } from "src/utils/helper";
+import {
+  generateAndSendOtp,
+  sendRedeemRewardEmail,
+  sendWinnerRewardEmail,
+} from "src/utils/helper";
 import { io as globalIo } from "../../../src/app";
 import { OrderModel } from "src/models/user/order-schema";
 import { UserRaffleModel } from "src/models/user/user-raffle-schema";
@@ -17,6 +21,8 @@ import Stripe from "stripe";
 import { RedemptionModel } from "src/models/admin/redemption-ladder-schema";
 import { GiftCardModel } from "src/models/admin/gift-card-schema";
 import { UserRedemptionModel } from "src/models/user/user-redemptionHistory-schema";
+import { RaffleWinnerModel } from "src/models/admin/raffle-winner-schema";
+import { RewardRedemptionModel } from "src/models/user/reward-redemption-schema";
 
 export const profileSerivce = {
   getUser: async (payload: any) => {
@@ -213,10 +219,10 @@ export const shippingServices = {
       postalCode,
     });
     const checkShippingDetails = await ShippingAddressModel.findOne({
-      userId:userId
-    })
-    if(checkShippingDetails){
-     throw new Error("Shipping Details already exist");
+      userId: userId,
+    });
+    if (checkShippingDetails) {
+      throw new Error("Shipping Details already exist");
     }
 
     if (phoneNumber) {
@@ -517,6 +523,126 @@ export const raffleServices = {
         page: pageNumber,
         limit: limitNumber,
         totalPages: Math.ceil(totalRaffles / limitNumber),
+      },
+    };
+  },
+  reedemRaffleReward: async (payload: any) => {
+    const { raffelId, userId } = payload;
+
+    if (
+      !mongoose.Types.ObjectId.isValid(raffelId) ||
+      !mongoose.Types.ObjectId.isValid(userId)
+    ) {
+      throw new Error("Invalid raffle or user ID");
+    }
+
+    const [raffle, winner, user, userRaffle] = await Promise.all([
+      RaffleModel.findOne({ _id: raffelId, isDeleted: false }),
+      RaffleWinnerModel.findOne({ raffleId: raffelId }),
+      UserModel.findOne({ _id: userId, isDeleted: false }),
+      UserRaffleModel.findOne({ userId, raffleId: raffelId }),
+    ]);
+
+    if (!raffle) throw new Error("Raffle not found.");
+    if (!winner)
+      throw new Error("Winner entry not found or raffle not yet concluded.");
+    if (!user) throw new Error("User not found.");
+    if (!userRaffle)
+      throw new Error(
+        "You are not authorized to redeem this reward or points."
+      );
+
+    const alreadyRedeemed = await RewardRedemptionModel.findOne({
+      userId,
+      raffleId: raffelId,
+    });
+    if (alreadyRedeemed) {
+      throw new Error(
+        "You have already redeemed this raffle reward or points."
+      );
+    }
+
+    let checkStatus = "";
+    let finalMessage = "";
+
+    const isWinner =
+      String(raffle.winnerId) === String(userId) &&
+      userRaffle.result === "WIN" &&
+      String(winner.userId) === String(userId);
+
+    if (isWinner) {
+      checkStatus = "Winner";
+      finalMessage = "Raffle reward redeemed successfully.";
+    } else if (userRaffle.result === "LOSS") {
+      checkStatus = "Loser";
+      finalMessage = "Consolation points redeemed successfully.";
+    } else {
+      throw new Error("You are not eligible to redeem this raffle.");
+    }
+
+    const reward = raffle.rewards?.[0];
+    if (!reward) {
+      throw new Error("No reward information found for this raffle.");
+    }
+
+    let promoCodeValue = "";
+    if (reward.promoCode) {
+      const promoDoc = await PromoCodeModel.findById(reward.promoCode);
+      if (promoDoc) promoCodeValue = promoDoc.reedemCode || "";
+    }
+
+    const points = reward.consolationPoints || 0;
+
+    if (checkStatus === "Winner") {
+      if (reward.rewardType === "DIGITAL") {
+        winner.status = "CLAIMED";
+        reward.rewardStatus = "CLAIMED";
+        await Promise.all([winner.save(), raffle.save()]);
+
+        await RewardRedemptionModel.create({
+          userId,
+          raffleId: raffelId,
+          type: "REWARD",
+          promoCode: promoCodeValue,
+          promoCodeId: raffle.rewards[0].promoCode || null,
+          redeemedAt: new Date(),
+        });
+
+        await sendWinnerRewardEmail({
+          to: user.email,
+          userName: user.userName,
+          raffleTitle: raffle.title,
+          promoCode: promoCodeValue || "",
+          companyName: "Your Company",
+        });
+      } else if (reward.rewardType === "PHYSICAL") {
+        throw new Error("Physical raffle rewards cannot be redeemed manually.");
+      }
+    } else if (checkStatus === "Loser") {
+      user.totalPoints = (user.totalPoints || 0) + points;
+      await user.save();
+
+      await RewardRedemptionModel.create({
+        userId,
+        raffleId: raffelId,
+        type: "POINTS",
+        pointsAwarded: points,
+        promoCodeId: null,
+
+        redeemedAt: new Date(),
+      });
+    }
+
+    return {
+      success: true,
+      message: finalMessage,
+      data: {
+        userId: user._id,
+        raffleId: raffle._id,
+        rewardType: reward.rewardType,
+        status: winner.status,
+        rewardStatus: reward.rewardStatus,
+        totalPoints: user.totalPoints,
       },
     };
   },

@@ -16,6 +16,7 @@ export interface IRaffle extends Document {
   winnerId: mongoose.Types.ObjectId;
   totalSlots: number;
   bookedSlots: number;
+  hasWinnerAnnounced: boolean;
   startDate: Date;
   endDate: Date;
   status: string;
@@ -46,6 +47,10 @@ const raffleSchema = new Schema<IRaffle>(
     bookedSlots: {
       type: Number,
       default: 0,
+    },
+    hasWinnerAnnounced: {
+      type: Boolean,
+      default: false,
     },
     startDate: {
       type: Date,
@@ -101,7 +106,17 @@ const raffleSchema = new Schema<IRaffle>(
         rewardStatus: {
           type: String,
           default: "",
-          enum: ["DELIVERED", "GRANTED","SHIPPED" ,""],
+          enum: [
+            "GRANTED",
+            "CLAIMED",
+            "PENDING",
+            "PROCESSING",
+            "SHIPPED",
+            "DELIVERED",
+            "CANCELED",
+            "FAILED",
+            "",
+          ],
         },
       },
     ],

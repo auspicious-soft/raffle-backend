@@ -4,11 +4,13 @@ import { GiftCardModel } from "src/models/admin/gift-card-schema";
 import { GiftCategoryModel } from "src/models/admin/gift-category-schema";
 import { PromoCodeModel } from "src/models/admin/promo-code-schema";
 import { RaffleModel } from "src/models/admin/raffle-schema";
+import { RaffleWinnerModel } from "src/models/admin/raffle-winner-schema";
 import { RedemptionModel } from "src/models/admin/redemption-ladder-schema";
 import { TransactionModel } from "src/models/user/transaction-schema";
 import { UserRedemptionModel } from "src/models/user/user-redemptionHistory-schema";
 import { UserModel } from "src/models/user/user-schema";
 import { ShippingAddressModel } from "src/models/user/user-shipping-schema";
+import { sendPhysicalRewardStatusEmail } from "src/utils/helper";
 import { Readable } from "stream";
 
 export const GiftCardServices = {
@@ -999,73 +1001,329 @@ export const RedempLadder = {
   },
 };
 
-export const generalInformation ={
+export const generalInformation = {
   revenue: async (payload: any) => {
-  const { page, limit } = payload;
- 
-  const pageNumber = parseInt(page, 10) || 1;     // ✅ default to 1
-  const limitNumber = parseInt(limit, 10) || 10;  // ✅ default to 10
-  const skip = (pageNumber - 1) * limitNumber;
- 
-  const filter = { status: "SUCCESS" };
- 
-  const totalTransactions = await TransactionModel.countDocuments(filter);
-  const rawTransactions = await TransactionModel.find(filter)
-    .skip(skip)
-    .limit(limitNumber)
-    .select("_id finalAmountCents createdAt status userId amountCents")
-    .populate("userId", "userName")
-    .populate("promoCodeId", "reedemCode discount")
-    .sort({ createdAt: -1 })
-    .lean();
- 
-  const transactions = rawTransactions.map((t: any) => ({
-    _id: t._id,
-    userName: t.userId?.userName || "Unknown User",
-    bucksPurchased: t.amountCents / 100,
-    promoCode: t.promoCodeId?.reedemCode || null,
-    discount: t.promoCodeId?.discount || 0,
-    amount: t.finalAmountCents / 100,
-    createdAt: t.createdAt,
-    status: t.status,
-  }));
- 
+    const { page, limit } = payload;
+
+    const pageNumber = parseInt(page, 10) || 1; // ✅ default to 1
+    const limitNumber = parseInt(limit, 10) || 10; // ✅ default to 10
+    const skip = (pageNumber - 1) * limitNumber;
+
+    const filter = { status: "SUCCESS" };
+
+    const totalTransactions = await TransactionModel.countDocuments(filter);
+    const rawTransactions = await TransactionModel.find(filter)
+      .skip(skip)
+      .limit(limitNumber)
+      .select("_id finalAmountCents createdAt status userId amountCents")
+      .populate("userId", "userName")
+      .populate("promoCodeId", "reedemCode discount")
+      .sort({ createdAt: -1 })
+      .lean();
+
+    const transactions = rawTransactions.map((t: any) => ({
+      _id: t._id,
+      userName: t.userId?.userName || "Unknown User",
+      bucksPurchased: t.amountCents / 100,
+      promoCode: t.promoCodeId?.reedemCode || null,
+      discount: t.promoCodeId?.discount || 0,
+      amount: t.finalAmountCents / 100,
+      createdAt: t.createdAt,
+      status: t.status,
+    }));
+
+    const now = new Date();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const startOfWeek = new Date(now);
+    startOfWeek.setDate(now.getDate() - now.getDay() + 1);
+    startOfWeek.setHours(0, 0, 0, 0);
+
+    const totalRevenueAgg = await TransactionModel.aggregate([
+      { $match: filter },
+      { $group: { _id: null, total: { $sum: "$finalAmountCents" } } },
+    ]);
+
+    const monthlyRevenueAgg = await TransactionModel.aggregate([
+      { $match: { ...filter, createdAt: { $gte: startOfMonth } } },
+      { $group: { _id: null, total: { $sum: "$finalAmountCents" } } },
+    ]);
+
+    const weeklyRevenueAgg = await TransactionModel.aggregate([
+      { $match: { ...filter, createdAt: { $gte: startOfWeek } } },
+      { $group: { _id: null, total: { $sum: "$finalAmountCents" } } },
+    ]);
+
+    const totalRevenue = (totalRevenueAgg[0]?.total || 0) / 100;
+    const revenueThisMonth = (monthlyRevenueAgg[0]?.total || 0) / 100;
+    const revenueThisWeek = (weeklyRevenueAgg[0]?.total || 0) / 100;
+
+    return {
+      totalRevenue,
+      revenueThisMonth,
+      revenueThisWeek,
+      transactions,
+      pagination: {
+        total: totalTransactions,
+        page: pageNumber,
+        limit: limitNumber,
+        totalPages: Math.ceil(totalTransactions / limitNumber),
+      },
+    };
+  },
+  winnerAndFullfillment: async (payload: any) => {
+    const { page, limit, search } = payload;
+
+    const pageNumber = parseInt(page, 10) || 1;
+    const limitNumber = parseInt(limit, 10) || 10;
+    const skip = (pageNumber - 1) * limitNumber;
+
+    const matchStage: any = {};
+
+    if (search && search.trim()) {
+      const users = await UserModel.find({
+        userName: { $regex: search, $options: "i" },
+      }).select("_id");
+      const userIds = users.map((u) => u._id);
+      matchStage.userId = { $in: userIds.length ? userIds : ["__no_user__"] };
+    }
+
+    const totalRecords = await RaffleWinnerModel.countDocuments(matchStage);
+
+    const winnersList = await RaffleWinnerModel.aggregate([
+      { $match: matchStage },
+      {
+        $lookup: {
+          from: "users",
+          localField: "userId",
+          foreignField: "_id",
+          as: "user",
+        },
+      },
+      { $unwind: "$user" },
+      {
+        $lookup: {
+          from: "raffles",
+          localField: "raffleId",
+          foreignField: "_id",
+          as: "raffle",
+        },
+      },
+      { $unwind: "$raffle" },
+      {
+        $project: {
+          _id: 1,
+          raffleId: 1,
+          raffleTitle: "$raffle.title",
+          userName: "$user.userName",
+          email: "$user.email",
+          raffleType: 1,
+          status: 1,
+          trackingLink: 1,
+        },
+      },
+      { $sort: { awardedAt: -1 } },
+      { $skip: skip },
+      { $limit: limitNumber },
+    ]);
+
+    return {
+      winnersList,
+      pagination: {
+        total: totalRecords,
+        page: pageNumber,
+        limit: limitNumber,
+        totalPages: Math.ceil(totalRecords / limitNumber),
+      },
+    };
+  },
+  addTrackingLink: async (payload: any) => {
+    const { id, link } = payload;
+
+    const winner = await RaffleWinnerModel.findById(id);
+    if (!winner) {
+      throw new Error("Winner entry not found.");
+    }
+
+    if (winner.trackingLink) {
+      throw new Error("Tracking link already exists for this winner.");
+    }
+
+    winner.trackingLink = link;
+    await winner.save();
+
+    return {
+      message: "Tracking link added successfully.",
+      data: winner,
+    };
+  },
+  updateDeliveryStatus: async (payload: any) => {
+    const { id, status } = payload;
+
+    const winner = await RaffleWinnerModel.findById(id).populate("userId","email userName");
+    const ALLOWED_STATUS = [
+      "PENDING",
+      "PROCESSING",
+      "SHIPPED",
+      "DELIVERED",
+      "CANCELED",
+      "FAILED",
+    ];
+    if (!winner) {
+      throw new Error("Winner Entry Not Found.");
+    }
+    if (status && !ALLOWED_STATUS.includes(status)) {
+      throw new Error(
+        `Invalid status. Allowed values: ${ALLOWED_STATUS.join(", ")}`
+      );
+    }
+    if (status === winner.status) {
+      throw new Error(`Status is already ${status} `);
+    }
+    const raffle = await RaffleModel.findOne({
+      _id:winner.raffleId,
+      isDeleted:false,
+    })
+    if(!raffle){
+      throw new Error("Raffle Not Found to udpate rewardStatus.")
+    }
+    if(raffle.rewards[0].rewardType === "DIGITAL"){
+      throw new Error("")
+    }
+    
+    winner.status = status;
+    await winner.save();
+
+    if (raffle.rewards.length > 0) {
+    raffle.rewards = raffle.rewards.map((reward) => ({
+      ...reward.toObject(),
+      rewardStatus: status, 
+    }));
+
+    await raffle.save();
+  }
+  const user = winner.userId as any;
+
+  if (raffle.rewards[0].rewardType === "PHYSICAL" && ["SHIPPED","DELIVERED","CANCELED"].includes(status)) {
+  await sendPhysicalRewardStatusEmail({
+    to: user.email,
+    userName: user.userName,
+    raffleTitle: raffle.title,
+    status,
+    trackingLink: winner.trackingLink, 
+    companyName: "Your Company",
+  });
+}
+
+  const responseData = {
+    _id: winner._id,
+    raffleId: winner.raffleId,
+    raffleType: winner.raffleType,
+    status,
+    trackingLink: winner.trackingLink || "",
+    raffleTitle: raffle.title,
+    userName: user.userName,
+    email: user.email,
+  };
+
+    return {
+     winner:responseData,
+    };
+  },
+};
+
+
+export const getDashboardDataService = async () => {
   const now = new Date();
   const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-  const startOfWeek = new Date(now);
-  startOfWeek.setDate(now.getDate() - now.getDay() + 1);
-  startOfWeek.setHours(0, 0, 0, 0);
- 
-  const totalRevenueAgg = await TransactionModel.aggregate([
-    { $match: filter },
-    { $group: { _id: null, total: { $sum: "$finalAmountCents" } } },
+  const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+
+  const liveRafflesCountPromise = RaffleModel.countDocuments({
+    status: "ACTIVE",
+    isDeleted: false,
+  });
+
+  const totalRafflesCountPromise = RaffleModel.countDocuments({ isDeleted: false });
+
+  const totalRaffleWinsCountPromise = RaffleModel.countDocuments({
+    winnerId: { $ne: null },
+    isDeleted: false,
+  });
+
+  const revenueThisMonthPromise = TransactionModel.aggregate([
+    { $match: { createdAt: { $gte: startOfMonth, $lte: endOfMonth }, status: "SUCCESS" } },
+    { $group: { _id: null, totalRevenue: { $sum: "$amount" } } },
   ]);
- 
-  const monthlyRevenueAgg = await TransactionModel.aggregate([
-    { $match: { ...filter, createdAt: { $gte: startOfMonth } } },
-    { $group: { _id: null, total: { $sum: "$finalAmountCents" } } },
-  ]);
- 
-  const weeklyRevenueAgg = await TransactionModel.aggregate([
-    { $match: { ...filter, createdAt: { $gte: startOfWeek } } },
-    { $group: { _id: null, total: { $sum: "$finalAmountCents" } } },
-  ]);
- 
-  const totalRevenue = (totalRevenueAgg[0]?.total || 0) / 100;
-  const revenueThisMonth = (monthlyRevenueAgg[0]?.total || 0) / 100;
-  const revenueThisWeek = (weeklyRevenueAgg[0]?.total || 0) / 100;
- 
-  return {
-    totalRevenue,
-    revenueThisMonth,
-    revenueThisWeek,
-    transactions,
-    pagination: {
-      total: totalTransactions,
-      page: pageNumber,
-      limit: limitNumber,
-      totalPages: Math.ceil(totalTransactions / limitNumber),
+
+   const activeRafflesPromise = RaffleModel.find({ status: "ACTIVE", isDeleted: false })
+    .sort({ startDate: -1 })
+    .select({ title: 1, endDate: 1, totalSlots: 1, bookedSlots: 1, rewards: 1 })
+    .lean();
+
+  const recentWinnersPromise = RaffleWinnerModel.find()
+    .sort({ awardedAt: -1 })
+    .limit(10)
+    .populate("userId", "userName")
+    .lean();
+
+  const redemptionOverviewPromise = RaffleWinnerModel.aggregate([
+    {
+      $group: {
+        _id: null,
+        pending: { $sum: { $cond: [{ $eq: ["$status", "PENDING"] }, 1, 0] } },
+        shipped: { $sum: { $cond: [{ $eq: ["$status", "SHIPPED"] }, 1, 0] } },
+        delivered: { $sum: { $cond: [{ $eq: ["$status", "DELIVERED"] }, 1, 0] } },
+      },
     },
+  ]);
+
+  const [
+    liveRafflesCount,
+    totalRafflesCount,
+    totalRaffleWinsCount,
+    revenueAgg,
+    activeRafflesRaw,
+    recentWinnersRaw,
+    redemptionOverviewAgg,
+  ] = await Promise.all([
+    liveRafflesCountPromise,
+    totalRafflesCountPromise,
+    totalRaffleWinsCountPromise,
+    revenueThisMonthPromise,
+    activeRafflesPromise,
+    recentWinnersPromise,
+    redemptionOverviewPromise,
+  ]);
+
+   const activeRaffles = activeRafflesRaw.map((raffle) => ({
+    _id: raffle._id,
+    title: raffle.title,
+    endDate: raffle.endDate,
+    totalSlots: raffle.totalSlots,
+    bookedSlots: raffle.bookedSlots,
+    rewardName: raffle.rewards?.[0]?.rewardName || "",
+  }));
+
+  const recentWinners = recentWinnersRaw.map((winner) => {
+  const user = winner.userId as any; 
+  return {
+    userId: user._id,
+    userName: user.userName,
   };
-}
-}
+});
+
+
+  const revenueThisMonth = revenueAgg.length ? revenueAgg[0].totalRevenue : 0;
+  const redemptionOverview = redemptionOverviewAgg.length
+    ? redemptionOverviewAgg[0]
+    : { pending: 0, shipped: 0, delivered: 0 };
+
+  return {
+    liveRafflesCount,
+    totalRafflesCount,
+    totalRaffleWinsCount,
+    revenueThisMonth,
+    activeRaffles,
+    recentWinners,
+    redemptionOverview,
+  };
+};

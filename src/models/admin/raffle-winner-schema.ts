@@ -1,17 +1,15 @@
 import mongoose, { Document, Schema } from "mongoose";
 
-
 export interface IRaffleWinner extends Document {
-  raffleId: mongoose.Types.ObjectId; 
+  raffleId: mongoose.Types.ObjectId;
   userId: mongoose.Types.ObjectId;
   userRaffleId?: mongoose.Types.ObjectId;
-  raffleType:string;
+  raffleType: string;
   status: string;
   awardedAt: Date;
   trackingLink?: string;
   createdAt: Date;
-  updatedAt: Date
-  
+  updatedAt: Date;
 }
 const raffleWinnerSchema = new Schema<IRaffleWinner>(
   {
@@ -52,7 +50,10 @@ const raffleWinnerSchema = new Schema<IRaffleWinner>(
       index: true,
     },
     awardedAt: { type: Date, default: Date.now },
-    trackingLink: String,
+    trackingLink: {
+      type: String,
+      default: "",
+    },
   },
   { timestamps: true }
 );

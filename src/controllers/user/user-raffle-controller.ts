@@ -105,9 +105,8 @@ export const withdrawRaffle = async (req: Request, res: Response) => {
   }
 };
 
-
-export const RafflePurchaseHistory = async (req:Request, res:Response) =>{
- try {
+export const RafflePurchaseHistory = async (req: Request, res: Response) => {
+  try {
     const userData = req.user as any;
     const { page = "1", limit = "10" } = req.query;
 
@@ -116,10 +115,28 @@ export const RafflePurchaseHistory = async (req:Request, res:Response) =>{
       page,
       limit,
     });
-
     return OK(res, response);
   } catch (err: any) {
     if (err.message) return BADREQUEST(res, err.message);
     return INTERNAL_SERVER_ERROR(res);
   }
-}
+};
+
+export const ReedemRaffleReward = async (req: Request, res: Response) => {
+  try {
+    const { id: raffelId } = req.body;
+    const userData = req.user as any;
+
+    if (!raffelId) {
+      throw new Error("Raffle Id is required");
+    }
+    const response = await raffleServices.reedemRaffleReward({
+      raffelId,
+      userId: userData._id,
+    });
+    return OK(res, response);
+  } catch (err: any) {
+    if (err.message) return BADREQUEST(res, err.message);
+    return INTERNAL_SERVER_ERROR(res);
+  }
+};
