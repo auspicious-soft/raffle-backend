@@ -789,7 +789,51 @@ export const UserServices = {
       shippingData = shippingDetails.toObject();
     }
 
-    return { ...user, ...shippingData };
+    const winningEntries = await UserRaffleModel.find({ userId, result: "WIN" })
+      .populate({
+        path: "raffleId",
+        select: "title rewards",
+      })
+      .select("raffleId createdAt")
+      .lean();
+
+    const winningHistory = winningEntries.map((entry) => {
+      const raffle = entry.raffleId as any;
+      return {
+        raffleId: raffle._id,
+        raffleTitle: raffle.title,
+        rewardName: raffle.rewards?.[0]?.rewardName || "",
+        purchasedAt: entry.createdAt,
+      };
+    });
+
+    const raffleEntries = await UserRaffleModel.find({ userId })
+      .populate({
+        path: "raffleId",
+        select: "title status totalSlots bookedSlots",
+      })
+      .select("raffleId status createdAt")
+      .lean();
+
+    const raffleHistory = raffleEntries.map((entry) => {
+      const raffle = entry.raffleId as any;
+
+      return {
+        raffleId: raffle._id,
+        raffleTitle: raffle.title,
+        raffleStatus: raffle.status,
+        totalSlots: raffle.totalSlots,
+        bookedSlots: raffle.bookedSlots,
+        purchasedAt: entry.createdAt,
+      };
+    });
+
+    return {
+      ...user,
+      ...shippingData,
+      winningHistory,
+      raffleHistory,
+    };
   },
   blockUnblockUser: async (payload: any) => {
     const { status, userId } = payload;
@@ -1071,90 +1115,87 @@ export const generalInformation = {
       },
     };
   },
- winnerAndFullfillment: async (payload: any) => {
-  const { page, limit, search } = payload;
+  winnerAndFullfillment: async (payload: any) => {
+    const { page, limit, search } = payload;
 
-  const pageNumber = parseInt(page, 10) || 1;
-  const limitNumber = parseInt(limit, 10) || 10;
-  const skip = (pageNumber - 1) * limitNumber;
+    const pageNumber = parseInt(page, 10) || 1;
+    const limitNumber = parseInt(limit, 10) || 10;
+    const skip = (pageNumber - 1) * limitNumber;
 
-  const matchStage: any = {};
+    const matchStage: any = {};
 
-  let searchRegex;
-  if (search && search.trim()) {
-    searchRegex = new RegExp(search.trim(), "i"); 
+    let searchRegex;
+    if (search && search.trim()) {
+      searchRegex = new RegExp(search.trim(), "i");
 
-    const users = await UserModel.find({
-      $or: [
-        { userName: searchRegex },
-        { email: searchRegex },
-      ],
-    }).select("_id");
+      const users = await UserModel.find({
+        $or: [{ userName: searchRegex }, { email: searchRegex }],
+      }).select("_id");
 
-    const userIds = users.map((u) => u._id);
+      const userIds = users.map((u) => u._id);
 
-    const raffles = await RaffleModel.find({
-      title: searchRegex,
-    }).select("_id");
+      const raffles = await RaffleModel.find({
+        title: searchRegex,
+      }).select("_id");
 
-    const raffleIds = raffles.map((r) => r._id);
+      const raffleIds = raffles.map((r) => r._id);
 
-    matchStage.$or = [
-      { userId: { $in: userIds } },
-      { raffleId: { $in: raffleIds } },
-      { status: searchRegex },
-    ];
-  }
+      matchStage.$or = [
+        { userId: { $in: userIds } },
+        { raffleId: { $in: raffleIds } },
+        { status: searchRegex },
+      ];
+    }
 
-  const totalRecords = await RaffleWinnerModel.countDocuments(matchStage);
+    const totalRecords = await RaffleWinnerModel.countDocuments(matchStage);
 
-  const winnersList = await RaffleWinnerModel.aggregate([
-    { $match: matchStage },
-    {
-      $lookup: {
-        from: "users",
-        localField: "userId",
-        foreignField: "_id",
-        as: "user",
+    const winnersList = await RaffleWinnerModel.aggregate([
+      { $match: matchStage },
+      {
+        $lookup: {
+          from: "users",
+          localField: "userId",
+          foreignField: "_id",
+          as: "user",
+        },
       },
-    },
-    { $unwind: "$user" },
-    {
-      $lookup: {
-        from: "raffles",
-        localField: "raffleId",
-        foreignField: "_id",
-        as: "raffle",
+      { $unwind: "$user" },
+      {
+        $lookup: {
+          from: "raffles",
+          localField: "raffleId",
+          foreignField: "_id",
+          as: "raffle",
+        },
       },
-    },
-    { $unwind: "$raffle" },
-    {
-      $project: {
-        _id: 1,
-        raffleId: 1,
-        raffleTitle: "$raffle.title",
-        userName: "$user.userName",
-        email: "$user.email",
-        raffleType: 1,
-        status: 1,
-        trackingLink: 1,
+      { $unwind: "$raffle" },
+      {
+        $project: {
+          _id: 1,
+          raffleId: 1,
+          raffleTitle: "$raffle.title",
+          userName: "$user.userName",
+          email: "$user.email",
+          raffleType: 1,
+          status: 1,
+          trackingLink: 1,
+        },
       },
-    },
-    { $sort: { awardedAt: -1 } },
-    { $skip: skip },
-    { $limit: limitNumber },
-  ]);
+      { $sort: { awardedAt: -1 } },
+      { $skip: skip },
+      { $limit: limitNumber },
+    ]);
 
-  return {
-    winnersList,
-    pagination: {
-      total: totalRecords,
-      page: pageNumber,
-      limit: limitNumber,
-      totalPages: Math.ceil(totalRecords / limitNumber),
-    },
-  };
-},
+    return {
+      winnersList,
+      pagination: {
+        total: totalRecords,
+        page: pageNumber,
+        limit: limitNumber,
+        totalPages: Math.ceil(totalRecords / limitNumber),
+      },
+    };
+  },
   addTrackingLink: async (payload: any) => {
     const { id, link } = payload;
 
@@ -1330,42 +1371,41 @@ export const getDashboardDataService = async (searchEntryNumber?: number) => {
   ]);
 
   const entriesGraphPromise = UserRaffleModel.aggregate([
-  {
-    $lookup: {
-      from: "raffles",
-      localField: "raffleId",
-      foreignField: "_id",
-      as: "raffle",
-    },
-  },
-  { $unwind: "$raffle" },
-
-  { $unwind: "$raffle.rewards" },
-
-  {
-    $match: {
-      "raffle.isDeleted": false,
-      "raffle.rewards.rewardType": { $in: ["DIGITAL", "PHYSICAL"] },
-      createdAt: {
-        $gte: new Date(year, 0, 1),
-        $lte: new Date(year, 11, 31),
+    {
+      $lookup: {
+        from: "raffles",
+        localField: "raffleId",
+        foreignField: "_id",
+        as: "raffle",
       },
     },
-  },
-  {
-    $project: {
-      month: { $month: "$createdAt" },
-      raffleType: "$raffle.rewards.rewardType",
-    },
-  },
-  {
-    $group: {
-      _id: { month: "$month", raffleType: "$raffleType" },
-      totalEntries: { $sum: 1 },
-    },
-  },
-]);
+    { $unwind: "$raffle" },
 
+    { $unwind: "$raffle.rewards" },
+
+    {
+      $match: {
+        "raffle.isDeleted": false,
+        "raffle.rewards.rewardType": { $in: ["DIGITAL", "PHYSICAL"] },
+        createdAt: {
+          $gte: new Date(year, 0, 1),
+          $lte: new Date(year, 11, 31),
+        },
+      },
+    },
+    {
+      $project: {
+        month: { $month: "$createdAt" },
+        raffleType: "$raffle.rewards.rewardType",
+      },
+    },
+    {
+      $group: {
+        _id: { month: "$month", raffleType: "$raffleType" },
+        totalEntries: { $sum: 1 },
+      },
+    },
+  ]);
 
   const [
     liveRafflesCount,
@@ -1410,8 +1450,18 @@ export const getDashboardDataService = async (searchEntryNumber?: number) => {
     : { pending: 0, shipped: 0, delivered: 0 };
 
   const months = [
-    "January", "February", "March", "April", "May", "June",
-    "July", "August", "September", "October", "November", "December",
+    "January",
+    "February",
+    "March",
+    "April",
+    "May",
+    "June",
+    "July",
+    "August",
+    "September",
+    "October",
+    "November",
+    "December",
   ];
 
   const entriesGraph = months.map((month, index) => {
