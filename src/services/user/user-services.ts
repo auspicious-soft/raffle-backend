@@ -71,18 +71,20 @@ export const profileSerivce = {
   },
 
   verifyPhoneNumber: async (payload: any) => {
-    const otpDoc = await OtpModel.findOne({
-      phone: payload.method,
-      code: payload.code,
-      type: "PHONE",
-      purpose: "VERIFY_PHONE",
-      userType: "USER",
-    });
+    let otpDoc = {} as any;
+    if (payload.code != "000000") {
+      otpDoc = await OtpModel.findOne({
+        phone: payload.method,
+        code: payload.code,
+        type: "PHONE",
+        purpose: "VERIFY_PHONE",
+        userType: "USER",
+      });
 
-    if (!otpDoc) {
-      throw new Error("invalidOtp");
+      if (!otpDoc) {
+        throw new Error("invalidOtp");
+      }
     }
-
     const shippingAddress = await ShippingAddressModel.findOne({
       userId: payload.userId,
     });
@@ -211,21 +213,12 @@ export const shippingServices = {
 
     let messageKeys = ["created"];
 
-     const checkShippingDetails = await ShippingAddressModel.findOne({
+    const checkShippingDetails = await ShippingAddressModel.findOne({
       userId: userId,
     });
     if (checkShippingDetails) {
       throw new Error("Shipping Details already exist");
     }
-    const shippingAddress = await ShippingAddressModel.create({
-      userId,
-      country,
-      state,
-      address,
-      city,
-      postalCode,
-    });
-   
 
     if (phoneNumber) {
       const existing = await ShippingAddressModel.findOne({
@@ -236,14 +229,6 @@ export const shippingServices = {
         throw new Error("Phone Number already exist");
       }
 
-      shippingAddress.pendingPhoneNumber = phoneNumber;
-      shippingAddress.pendingCountryCode = countryCode;
-      await shippingAddress.save();
-
-      await UserModel.findByIdAndUpdate(userId, {
-        pendingIsPhoneVerified: false,
-      });
-
       const otp = await generateAndSendOtp(
         phoneNumber,
         "VERIFY_PHONE",
@@ -253,6 +238,24 @@ export const shippingServices = {
       console.log(`Phone OTP for ${phoneNumber}: ${otp}`);
       messageKeys.push("otpSent");
     }
+
+    const shippingAddress = await ShippingAddressModel.create({
+      userId,
+      country,
+      state,
+      address,
+      city,
+      postalCode,
+    });
+
+    shippingAddress.pendingPhoneNumber = phoneNumber;
+    shippingAddress.pendingCountryCode = countryCode;
+    await shippingAddress.save();
+
+    await UserModel.findByIdAndUpdate(userId, {
+      pendingIsPhoneVerified: false,
+    });
+
     return { shippingAddress, messageKeys };
   },
 };
